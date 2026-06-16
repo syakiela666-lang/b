@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>Blockzi Solver</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="main-container">
+        
+        <!-- Board Panel -->
+        <div class="compact-panel">
+            <div class="panel-header-compact">
+                <span id="ai-status" class="status-badge">Input Balok...</span>
+                <button id="clear-board-btn" class="btn-tiny btn-danger">🗑️ Board</button>
+            </div>
+            <div id="main-board" class="board"></div>
+        </div>
+
+        <!-- Spawner & Actions Panel -->
+        <div class="compact-panel">
+            <div class="panel-header-compact">
+                <span style="font-size:12px; color:#94a3b8;">Antrean (Tap utk hapus):</span>
+                <button id="clear-queue-btn" class="btn-tiny btn-danger">🗑️ Antrean</button>
+            </div>
+            <div class="queues-and-actions">
+                <div class="queues-container" id="spawner">
+                    <div class="queue-slot empty" data-idx="0">1</div>
+                    <div class="queue-slot empty" data-idx="1">2</div>
+                    <div class="queue-slot empty" data-idx="2">3</div>
+                </div>
+                <div class="action-buttons-compact">
+                    <button id="calculate-btn" class="btn-compact btn-primary">🧠 AI</button>
+                    <button id="apply-btn" class="btn-compact btn-success" disabled>🚀 GO</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Library Panel -->
+        <div class="compact-panel">
+            <div class="panel-header-compact" style="margin-bottom: 5px;">
+                <span style="font-size:12px; color:#94a3b8;">📚 Koleksi (Tahan/Hold utk Hapus)</span>
+                <div>
+                    <button id="import-lib-btn" class="btn-tiny btn-secondary">📥 Import</button>
+                    <button id="export-lib-btn" class="btn-tiny btn-secondary">📤 Export</button>
+                </div>
+            </div>
+            <div id="palette" class="palette-container-grid">
+                <!-- Library items injected here -->
+            </div>
+        </div>
+
+        <!-- Collapsible Builder -->
+        <details class="compact-panel details-builder">
+            <summary style="font-size:12px; color:#94a3b8; cursor:pointer;">🛠️ Custom Builder</summary>
+            <div style="margin-top:10px;">
+                <div class="builder-grid" id="builderGrid"></div>
+                <div style="display:flex; gap:5px; margin-top:10px;">
+                    <button id="save-lib-btn" class="btn-compact btn-secondary" style="flex:1;">Simpan</button>
+                    <button id="clear-builder-btn" class="btn-compact btn-danger" style="flex:1;">Reset</button>
+                </div>
+            </div>
+        </details>
+
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

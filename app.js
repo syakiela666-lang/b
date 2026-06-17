@@ -76,57 +76,46 @@ class AIEngine {
         return count * 10;           // Custom blocks
     }
     
-    // ATURAN 4: Bonus for building from edges to center
-    getEdgeBuildingScore(block, row, col) {
-        let score = 0;
-        for (let br = 0; br < block.length; br++) {
-            for (let bc = 0; bc < block[0].length; bc++) {
-                if (block[br][bc] === 1) {
-                    let r = row + br, c = col + bc;
-                    let distFromEdge = Math.min(r, 7 - r, c, 7 - c);
-                    score += (4 - distFromEdge) * 15; // Closer to edge = higher
-                }
-            }
-        }
-        return score;
-    }
+    // =======================================
+    // TERMINAL NODE HEURISTICS
+    // =======================================
     
-    // Lubang 'pocket' (kosong dikelilingi 3 sisi terisi/dinding)
-    countHoles(grid) {
-        let holes = 0;
+    // Algoritma Flood Fill untuk Deteksi Area Mati (Dead Zones)
+    getDeadZonesScore(grid) {
+        let penalty = 0;
+        let visited = Array(8).fill(0).map(() => Array(8).fill(false));
+        
         for (let r = 0; r < 8; r++) {
             for (let c = 0; c < 8; c++) {
-                if (grid[r][c] === 0) {
-                    let walls = 0;
-                    if (r === 0 || grid[r-1][c] === 1) walls++;
-                    if (r === 7 || grid[r+1][c] === 1) walls++;
-                    if (c === 0 || grid[r][c-1] === 1) walls++;
-                    if (c === 7 || grid[r][c+1] === 1) walls++;
-                    if (walls === 3) holes++;
+                if (grid[r][c] === 0 && !visited[r][c]) {
+                    let areaSize = 0;
+                    let queue = [[r, c]];
+                    visited[r][c] = true;
+                    
+                    while (queue.length > 0) {
+                        let [cr, cc] = queue.shift();
+                        areaSize++;
+                        
+                        let neighbors = [[cr-1, cc], [cr+1, cc], [cr, cc-1], [cr, cc+1]];
+                        for (let [nr, nc] of neighbors) {
+                            if (nr >= 0 && nr < 8 && nc >= 0 && nc < 8 && grid[nr][nc] === 0 && !visited[nr][nc]) {
+                                visited[nr][nc] = true;
+                                queue.push([nr, nc]);
+                            }
+                        }
+                    }
+                    // Jika luas area kosong <= 4, itu adalah daerah mati
+                    // FIX: Makin kecil lubang, makin parah dendanya. Lubang 1 kotak denda maksimal.
+                    if (areaSize <= 4) {
+                        penalty -= (5 - areaSize) * 15000;
+                    }
                 }
             }
         }
-        return holes;
+        return penalty;
     }
-    
-    // Lubang 'terjebak' total (kosong dikelilingi 4 sisi = MATI, mustahil diisi kecuali ada 1x1)
-    countTrappedCells(grid) {
-        let trapped = 0;
-        for (let r = 0; r < 8; r++) {
-            for (let c = 0; c < 8; c++) {
-                if (grid[r][c] === 0) {
-                    let walls = 0;
-                    if (r === 0 || grid[r-1][c] === 1) walls++;
-                    if (r === 7 || grid[r+1][c] === 1) walls++;
-                    if (c === 0 || grid[r][c-1] === 1) walls++;
-                    if (c === 7 || grid[r][c+1] === 1) walls++;
-                    if (walls === 4) trapped++;
-                }
-            }
-        }
-        return trapped;
-    }
-    
+
+
     // Baris/kolom yang hampir penuh (7 dari 8 terisi) = 1 langkah lagi clear!
     countNearCompleteLines(grid) {
         let count = 0;
@@ -190,42 +179,92 @@ class AIEngine {
         valid_blocks.sort((a, b) => this.getBlockDifficulty(b.block) - this.getBlockDifficulty(a.block));
         
         const dfs = (current_grid, remaining_blocks, current_score, path) => {
-            if (remaining_blocks.length === 0) return { score: current_score, path: path };
+            // TERMINAL NODE: Evaluasi Kesehatan Papan dilakukan HANYA SATU KALI di akhir!
+            if (remaining_blocks.length === 0) {
+                let final_score = current_score;
+                
+                // Uji Kelayakan Hidup (Survival Check) Graded Penalty
+                let can3x3 = false, can5x1 = false, can1x5 = false;
+                for (let r = 0; r <= 5; r++) {
+                    for (let c = 0; c <= 5; c++) {
+                        let ok = true;
+                        for (let br = 0; br < 3 && ok; br++) {
+                            for (let bc = 0; bc < 3 && ok; bc++) {
+                                if (current_grid[r+br][c+bc] !== 0) ok = false;
+                            }
+                        }
+                        if (ok) { can3x3 = true; break; }
+                    }
+                    if (can3x3) break;
+                }
+                for (let r = 0; r <= 3; r++) {
+                    for (let c = 0; c < 8; c++) {
+                        let ok = true;
+                        for (let br = 0; br < 5 && ok; br++) {
+                            if (current_grid[r+br][c] !== 0) ok = false;
+                        }
+                        if (ok) { can5x1 = true; break; }
+                    }
+                    if (can5x1) break;
+                }
+                for (let r = 0; r < 8; r++) {
+                    for (let c = 0; c <= 3; c++) {
+                        let ok = true;
+                        for (let bc = 0; bc < 5 && ok; bc++) {
+                            if (current_grid[r][c+bc] !== 0) ok = false;
+                        }
+                        if (ok) { can1x5 = true; break; }
+                    }
+                    if (can1x5) break;
+                }
+                
+                if (!can3x3) final_score -= 500000;
+                if (!can5x1) final_score -= 100000;
+                if (!can1x5) final_score -= 100000;
+                
+                // Deteksi Area Mati (Dead Zones)
+                final_score += this.getDeadZonesScore(current_grid); // Fungsi ini mengembalikan nilai minus
+                
+                // Kerapian Permukaan
+                final_score -= this.getGridRoughness(current_grid) * 50;
+                
+                // Investasi Masa Depan (Near-Clears)
+                final_score += this.countNearCompleteLines(current_grid) * 300;
+                
+                return { score: final_score, path: path };
+            }
             
-            let best_future = { score: -999999, path: path };
+            let best_future = { score: -9999999, path: path };
             let placed_any = false;
             
             for (let i = 0; i < remaining_blocks.length; i++) {
                 let item = remaining_blocks[i];
-                let difficulty = this.getBlockDifficulty(item.block);
                 
                 for (let r = 0; r < 8; r++) {
                     for (let c = 0; c < 8; c++) {
                         if (state.can_place(item.block, r, c, current_grid)) {
                             placed_any = true;
                             let {new_grid, lines_cleared} = state.place_block(item.block, r, c, current_grid);
-                            let touching = state.get_touching_edges(item.block, r, c, current_grid);
                             
-                            // ATURAN 1: Eksekusi Instan - HUGE bonus for line clears NOW
-                            let step_score = (lines_cleared * 3000) + (touching * 30);
+                            // SKOR LANGKAH: Prioritas Utama & Bonus Pas Mantap!
+                            let touching_edges = state.get_touching_edges(item.block, r, c, current_grid);
+                            let step_score = (lines_cleared * 100000) + (touching_edges * 500);
                             
-                            // ATURAN 2: Balok Terbesar Diprioritaskan (Balanced)
-                            // Multiplier 25 (max ~7500 poin) supaya AI pilih balok besar duluan, 
-                            // KECUALI jika balok kecil bisa memicu combo besar (> 2 baris).
-                            step_score += difficulty * remaining_blocks.length * 25;
-                            
-                            // ATURAN 3: Segel Tanah Suci
-                            step_score += this.countOpen3x3(new_grid) * 500;
-                            step_score += this.countOpen5x1(new_grid) * 400;
-                            
-                            // BONUS: Baris/kolom hampir penuh = siap clear
-                            step_score += this.countNearCompleteLines(new_grid) * 300;
-                            
-                            // ATURAN 4: Ratakan Tanah
-                            step_score += this.getEdgeBuildingScore(item.block, r, c);
-                            step_score -= this.countHoles(new_grid) * 400;
-                            step_score -= this.countTrappedCells(new_grid) * 1500;
-                            step_score -= this.getGridRoughness(new_grid) * 20;
+                            // Hitung Perimeter (Max Outer Edges) untuk Jackpot Perfect Fit
+                            let max_outer_edges = 0;
+                            for (let br = 0; br < item.block.length; br++) {
+                                for (let bc = 0; bc < item.block[0].length; bc++) {
+                                    if (item.block[br][bc] === 1) {
+                                        if (br === 0 || item.block[br-1][bc] === 0) max_outer_edges++;
+                                        if (br === item.block.length - 1 || item.block[br+1][bc] === 0) max_outer_edges++;
+                                        if (bc === 0 || item.block[br][bc-1] === 0) max_outer_edges++;
+                                        if (bc === item.block[0].length - 1 || item.block[br][bc+1] === 0) max_outer_edges++;
+                                    }
+                                }
+                            }
+                            if (touching_edges >= (max_outer_edges * 0.8)) {
+                                step_score += 25000; // Jackpot Perfect Fit
+                            }
                             
                             let next_remaining = remaining_blocks.filter((_, index) => index !== i);
                             let current_step = { row: r, col: c, block_idx: item.idx, block: item.block, resulting_grid: new_grid };
@@ -236,7 +275,13 @@ class AIEngine {
                     }
                 }
             }
-            if (!placed_any) return { score: current_score - 100000, path: path };
+            
+            // PENALTI KRITIS: Jika AI gagal menaruh balok, berikan penalti yang JAUH lebih besar dari Penalti Kiamat (-999.999).
+            // Ini memaksa AI untuk selalu memilih jalur yang bisa menaruh ke-3 balok, meskipun papan akhirnya Kiamat.
+            if (!placed_any) {
+                return { score: current_score - 90000000 - (remaining_blocks.length * 1000000), path: path };
+            }
+            
             return best_future;
         };
         
@@ -245,39 +290,7 @@ class AIEngine {
         return null;
     }
 
-    // =======================================
-    // Heuristik Zona: 3x3 & 5x1
-    // =======================================
-    countOpen3x3(gridArr) {
-        let count = 0;
-        for (let r = 0; r <= 5; r++) {
-            for (let c = 0; c <= 5; c++) {
-                let isClean = true;
-                checkLoop: for (let i = 0; i < 3; i++) {
-                    for (let j = 0; j < 3; j++) {
-                        if (gridArr[r + i][c + j] === 1) { isClean = false; break checkLoop; }
-                    }
-                }
-                if (isClean) count++;
-            }
-        }
-        return count;
-    }
 
-    countOpen5x1(gridArr) {
-        let count = 0;
-        for (let r = 0; r < 8; r++) {
-            for (let c = 0; c <= 3; c++) {
-                if (gridArr[r][c]===0 && gridArr[r][c+1]===0 && gridArr[r][c+2]===0 && gridArr[r][c+3]===0 && gridArr[r][c+4]===0) count++;
-            }
-        }
-        for (let c = 0; c < 8; c++) {
-            for (let r = 0; r <= 3; r++) {
-                if (gridArr[r][c]===0 && gridArr[r+1][c]===0 && gridArr[r+2][c]===0 && gridArr[r+3][c]===0 && gridArr[r+4][c]===0) count++;
-            }
-        }
-        return count;
-    }
 
     // =======================================
     // TAHAP 2: MODE KRITIS - Deep Simulation
@@ -288,17 +301,21 @@ class AIEngine {
         
         // Mini-DFS: coba taruh SEMUA balok secara berurutan.
         // Return skor terbaik jika SEMUA masuk, null jika ada yg mentok.
-        const simulate_all_placements = (grid, blocks) => {
+        const simulate_all_placements = (grid, blocks, current_score = 0) => {
             if (blocks.length === 0) {
                 // Semua balok berhasil ditaruh! Nilai papan akhir.
-                let score = 0;
-                score += this.countOpen3x3(grid) * 500;
-                score += this.countOpen5x1(grid) * 400;
-                score += this.countNearCompleteLines(grid) * 300;
-                score -= this.countHoles(grid) * 400;
-                score -= this.countTrappedCells(grid) * 1500;
-                score -= this.getGridRoughness(grid) * 20;
-                return score;
+                let final_score = current_score;
+                let can3x3 = false, can5x1 = false, can1x5 = false;
+                for (let r = 0; r <= 5; r++) { for (let c = 0; c <= 5; c++) { let ok = true; for (let br = 0; br < 3 && ok; br++) { for (let bc = 0; bc < 3 && ok; bc++) { if (grid[r+br][c+bc] !== 0) ok = false; } } if (ok) { can3x3 = true; break; } } if (can3x3) break; }
+                for (let r = 0; r <= 3; r++) { for (let c = 0; c < 8; c++) { let ok = true; for (let br = 0; br < 5 && ok; br++) { if (grid[r+br][c] !== 0) ok = false; } if (ok) { can5x1 = true; break; } } if (can5x1) break; }
+                for (let r = 0; r < 8; r++) { for (let c = 0; c <= 3; c++) { let ok = true; for (let bc = 0; bc < 5 && ok; bc++) { if (grid[r][c+bc] !== 0) ok = false; } if (ok) { can1x5 = true; break; } } if (can1x5) break; }
+                if (!can3x3) final_score -= 500000;
+                if (!can5x1) final_score -= 100000;
+                if (!can1x5) final_score -= 100000;
+                final_score += this.getDeadZonesScore(grid);
+                final_score -= this.getGridRoughness(grid) * 50;
+                final_score += this.countNearCompleteLines(grid) * 300;
+                return final_score;
             }
             
             let best_score = null;
@@ -308,15 +325,28 @@ class AIEngine {
                     for (let c = 0; c <= 8 - block[0].length; c++) {
                         if (state.can_place(block, r, c, grid)) {
                             let {new_grid, lines_cleared} = state.place_block(block, r, c, grid);
-                            let touching = state.get_touching_edges(block, r, c, grid);
+                            let touching_edges = state.get_touching_edges(block, r, c, grid);
+                            let step_score = (lines_cleared * 100000) + (touching_edges * 500);
+                            let max_outer_edges = 0;
+                            for (let br = 0; br < block.length; br++) {
+                                for (let bc = 0; bc < block[0].length; bc++) {
+                                    if (block[br][bc] === 1) {
+                                        if (br === 0 || block[br-1][bc] === 0) max_outer_edges++;
+                                        if (br === block.length - 1 || block[br+1][bc] === 0) max_outer_edges++;
+                                        if (bc === 0 || block[br][bc-1] === 0) max_outer_edges++;
+                                        if (bc === block[0].length - 1 || block[br][bc+1] === 0) max_outer_edges++;
+                                    }
+                                }
+                            }
+                            if (touching_edges >= (max_outer_edges * 0.8)) {
+                                step_score += 25000;
+                            }
                             
-                            let step_score = (lines_cleared * 3000) + touching;
                             let remaining = blocks.filter((_, idx) => idx !== i);
-                            let future = simulate_all_placements(new_grid, remaining);
+                            let future = simulate_all_placements(new_grid, remaining, current_score + step_score);
                             
                             if (future !== null) {
-                                let total = step_score + future;
-                                if (best_score === null || total > best_score) best_score = total;
+                                if (best_score === null || future > best_score) best_score = future;
                             }
                         }
                     }
@@ -427,8 +457,8 @@ function loadLibrary() {
     const saved = localStorage.getItem('blockzi_pwa_lib');
     if (saved) { 
         library = JSON.parse(saved); 
-        // Force update for users coming from old 23-item layout
-        if (library.length === 23) library = [];
+        // Force update for users if they don't have exactly 45 items
+        if (library.length !== 45) library = [];
     }
     if (!library || library.length === 0) {
         library = JSON.parse(JSON.stringify(defaultShapes));
@@ -789,12 +819,16 @@ document.getElementById('calculate-btn').onclick = () => {
     let t1 = performance.now();
     
     // Cek apakah SEMUA balok berhasil ditaruh
+    let isKiamat = result && result.score < -500000;
     let allPlaced = result && result.path && result.path.length === validBlocks.length;
     
+    // Jika AI berhasil menaruh semua balok, biarkan saja dieksekusi (jangan pakai item)
+    // Item sangat berharga dan HANYA boleh dipakai kalau AI benar-benar mentok fisik (allPlaced = false)
     if (allPlaced) {
         currentRecommendation = result.path;
         document.getElementById('ai-status').textContent = `Berhasil! (Skor: ${result.score})`;
-        document.getElementById('ai-status').className = "status-badge";
+        if (isKiamat) document.getElementById('ai-status').textContent += " ⚠️ AWAS KIAMAT!";
+        document.getElementById('ai-status').className = "status-badge" + (isKiamat ? " alert" : "");
         document.getElementById('apply-btn').disabled = false;
         
         updateBoardVisuals(); 
@@ -805,8 +839,9 @@ document.getElementById('calculate-btn').onclick = () => {
             canTrash: document.getElementById('use-hammer-toggle').checked,
             canBomb: document.getElementById('use-bomb-toggle').checked
         };
+        let itemsAllowed = availabilities.can1x1 || availabilities.canTrash || availabilities.canBomb;
         
-        if (availabilities.can1x1 || availabilities.canTrash || availabilities.canBomb) {
+        if (itemsAllowed) {
             // ITEM FALLBACK
             document.getElementById('ai-status').textContent = "Evaluasi Masa Depan...";
             document.getElementById('ai-status').className = "status-badge alert";

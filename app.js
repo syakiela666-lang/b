@@ -94,8 +94,6 @@ class AIEngine {
                             }
                         }
                     }
-                    // REVISI BARU: Jangkauan radar diperlebar (lubang ukuran < 9 itu bahaya)
-                    // Hukuman dibikin makin sadis buat lubang yang makin kecil.
                     if (areaSize < 9) {
                         penalty -= (9 - areaSize) * 15000;
                     }
@@ -204,9 +202,11 @@ class AIEngine {
                 
                 final_score += this.getDeadZonesScore(current_grid);
                 
-                // REVISI BARU: Hukuman kekasaran papan dikali 500 biar AI lebih mementingkan kerapian
-                final_score -= this.getGridRoughness(current_grid) * 500;
-                final_score += this.countNearCompleteLines(current_grid) * 300;
+                // UPDATE: Kurangi OCD Kerapian biar AI mau berkorban bentuk
+                final_score -= this.getGridRoughness(current_grid) * 200;
+                
+                // UPDATE: Naikkan gila-gilaan iming-iming jebakan baris (Near Clear)
+                final_score += this.countNearCompleteLines(current_grid) * 15000;
                 
                 return { score: final_score, path: path };
             }
@@ -224,10 +224,10 @@ class AIEngine {
                             let {new_grid, lines_cleared} = state.place_block(item.block, r, c, current_grid);
                             
                             let touching_edges = state.get_touching_edges(item.block, r, c, current_grid);
-                            // REVISI BARU: Poin Clear Line di-nerf jadi 25.000 supaya AI tidak rakus
-                            let step_score = (lines_cleared * 25000) + (touching_edges * 500);
                             
-                            // Algoritma Keliling Asli (Dynamic Perimeter) yang sempurna
+                            // UPDATE: Naikkan gaji tukang sapu (Clear Line Reward) jadi 75.000
+                            let step_score = (lines_cleared * 75000) + (touching_edges * 500);
+                            
                             let max_outer_edges = 0;
                             for (let br = 0; br < item.block.length; br++) {
                                 for (let bc = 0; bc < item.block[0].length; bc++) {
@@ -281,9 +281,11 @@ class AIEngine {
                 if (!can1x5) final_score -= 100000;
                 
                 final_score += this.getDeadZonesScore(grid);
-                // REVISI BARU: Hukuman bergerigi dinaikkan di otak darurat juga
-                final_score -= this.getGridRoughness(grid) * 500;
-                final_score += this.countNearCompleteLines(grid) * 300;
+                
+                // UPDATE OTAK DARURAT: Samakan dengan otak utama
+                final_score -= this.getGridRoughness(grid) * 200;
+                final_score += this.countNearCompleteLines(grid) * 15000;
+                
                 return final_score;
             }
             
@@ -296,10 +298,9 @@ class AIEngine {
                             let {new_grid, lines_cleared} = state.place_block(block, r, c, grid);
                             let touching_edges = state.get_touching_edges(block, r, c, grid);
                             
-                            // REVISI BARU: Clear line di-nerf jadi 25.000 di otak darurat
-                            let step_score = (lines_cleared * 25000) + (touching_edges * 500);
+                            // UPDATE OTAK DARURAT: Samakan skor Clear Line (75.000)
+                            let step_score = (lines_cleared * 75000) + (touching_edges * 500);
                             
-                            // Dynamic perimeter di otak darurat
                             let max_outer_edges = 0;
                             for (let br = 0; br < block.length; br++) {
                                 for (let bc = 0; bc < block[0].length; bc++) {
@@ -405,7 +406,7 @@ class AIEngine {
     }
 }
 
-// UI State & Logic
+// UI State & Logic (Tidak ada yang diubah, tetap aman)
 const state = new GameState();
 const ai = new AIEngine();
 let spawnerQueues = [null, null, null];

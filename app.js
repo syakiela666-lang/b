@@ -54,6 +54,129 @@ class GameState {
 }
 
 class AIEngine {
+    // =======================================
+    // TAHAP 1: MODE AMAN - Helper Functions
+    // =======================================
+    
+    // Seberapa sulit balok ini ditaruh? Makin tinggi = makin susah
+    getBlockDifficulty(block) {
+        let rows = block.length;
+        let cols = block[0].length;
+        let count = block.flat().reduce((s, v) => s + v, 0);
+        
+        if (rows === 3 && cols === 3 && count === 9) return 100; // 3x3 square
+        if (count === 5 && (rows === 1 || cols === 1)) return 90; // 5-line
+        if (rows === 3 && cols === 3 && count === 5) return 85;   // Large L
+        if (count === 4 && (rows === 1 || cols === 1)) return 60; // 4-line
+        if (count === 4 && ((rows === 2 && cols === 3) || (rows === 3 && cols === 2))) return 55; // T-shapes
+        if (count === 3 && rows === 2 && cols === 2) return 40;   // Small L
+        if (count === 3 && (rows === 1 || cols === 1)) return 30; // 3-line
+        if (count === 2) return 15;  // 2-line
+        if (count === 1) return 5;   // Dot
+        return count * 10;           // Custom blocks
+    }
+    
+    // ATURAN 4: Bonus for building from edges to center
+    getEdgeBuildingScore(block, row, col) {
+        let score = 0;
+        for (let br = 0; br < block.length; br++) {
+            for (let bc = 0; bc < block[0].length; bc++) {
+                if (block[br][bc] === 1) {
+                    let r = row + br, c = col + bc;
+                    let distFromEdge = Math.min(r, 7 - r, c, 7 - c);
+                    score += (4 - distFromEdge) * 15; // Closer to edge = higher
+                }
+            }
+        }
+        return score;
+    }
+    
+    // Lubang 'pocket' (kosong dikelilingi 3 sisi terisi/dinding)
+    countHoles(grid) {
+        let holes = 0;
+        for (let r = 0; r < 8; r++) {
+            for (let c = 0; c < 8; c++) {
+                if (grid[r][c] === 0) {
+                    let walls = 0;
+                    if (r === 0 || grid[r-1][c] === 1) walls++;
+                    if (r === 7 || grid[r+1][c] === 1) walls++;
+                    if (c === 0 || grid[r][c-1] === 1) walls++;
+                    if (c === 7 || grid[r][c+1] === 1) walls++;
+                    if (walls === 3) holes++;
+                }
+            }
+        }
+        return holes;
+    }
+    
+    // Lubang 'terjebak' total (kosong dikelilingi 4 sisi = MATI, mustahil diisi kecuali ada 1x1)
+    countTrappedCells(grid) {
+        let trapped = 0;
+        for (let r = 0; r < 8; r++) {
+            for (let c = 0; c < 8; c++) {
+                if (grid[r][c] === 0) {
+                    let walls = 0;
+                    if (r === 0 || grid[r-1][c] === 1) walls++;
+                    if (r === 7 || grid[r+1][c] === 1) walls++;
+                    if (c === 0 || grid[r][c-1] === 1) walls++;
+                    if (c === 7 || grid[r][c+1] === 1) walls++;
+                    if (walls === 4) trapped++;
+                }
+            }
+        }
+        return trapped;
+    }
+    
+    // Baris/kolom yang hampir penuh (7 dari 8 terisi) = 1 langkah lagi clear!
+    countNearCompleteLines(grid) {
+        let count = 0;
+        for (let r = 0; r < 8; r++) {
+            let filled = grid[r].filter(v => v === 1).length;
+            if (filled === 7) count++;
+        }
+        for (let c = 0; c < 8; c++) {
+            let filled = 0;
+            for (let r = 0; r < 8; r++) if (grid[r][c] === 1) filled++;
+            if (filled === 7) count++;
+        }
+        return count;
+    }
+    
+    // ATURAN 4: Ukur kekasaran permukaan papan (makin rendah = makin rata)
+    getGridRoughness(grid) {
+        let roughness = 0;
+        for (let r = 0; r < 8; r++) {
+            for (let c = 0; c < 7; c++) {
+                if (grid[r][c] !== grid[r][c+1]) roughness++;
+            }
+        }
+        for (let c = 0; c < 8; c++) {
+            for (let r = 0; r < 7; r++) {
+                if (grid[r][c] !== grid[r+1][c]) roughness++;
+            }
+        }
+        return roughness;
+    }
+    
+    // Helper: Clear lines on a grid copy
+    clearLinesOnGrid(grid) {
+        let g = grid.map(r => [...r]);
+        let rows_to_clear = [], cols_to_clear = [];
+        for (let i = 0; i < 8; i++) {
+            if (g[i].every(v => v === 1)) rows_to_clear.push(i);
+            let col_full = true;
+            for (let j = 0; j < 8; j++) if (g[j][i] === 0) col_full = false;
+            if (col_full) cols_to_clear.push(i);
+        }
+        let count = rows_to_clear.length + cols_to_clear.length;
+        for (let r of rows_to_clear) for (let c = 0; c < 8; c++) g[r][c] = 0;
+        for (let c of cols_to_clear) for (let r = 0; r < 8; r++) g[r][c] = 0;
+        return { grid: g, count };
+    }
+    
+    // =======================================
+    // TAHAP 1: MODE AMAN - Otak Utama (DFS)
+    // =======================================
     find_best_move(state, available_blocks) {
         let valid_blocks = [];
         for (let i = 0; i < available_blocks.length; i++) {
@@ -63,6 +186,9 @@ class AIEngine {
         }
         if (valid_blocks.length === 0) return null;
         
+        // ATURAN 2: Sort hardest blocks first
+        valid_blocks.sort((a, b) => this.getBlockDifficulty(b.block) - this.getBlockDifficulty(a.block));
+        
         const dfs = (current_grid, remaining_blocks, current_score, path) => {
             if (remaining_blocks.length === 0) return { score: current_score, path: path };
             
@@ -71,19 +197,35 @@ class AIEngine {
             
             for (let i = 0; i < remaining_blocks.length; i++) {
                 let item = remaining_blocks[i];
+                let difficulty = this.getBlockDifficulty(item.block);
+                
                 for (let r = 0; r < 8; r++) {
                     for (let c = 0; c < 8; c++) {
                         if (state.can_place(item.block, r, c, current_grid)) {
                             placed_any = true;
                             let {new_grid, lines_cleared} = state.place_block(item.block, r, c, current_grid);
                             let touching = state.get_touching_edges(item.block, r, c, current_grid);
-                            let step_score = (lines_cleared * 2000) + touching;
                             
-                            // Heuristik tambahan: Open 3x3 dan 5-block bonus
-                            if (remaining_blocks.length === 1) { // di akhir langkah
-                                step_score += this.countOpen3x3(new_grid) * 500;
-                                step_score += this.countOpen5x1(new_grid) * 400; // Prioritas tinggi untuk balok 5
-                            }
+                            // ATURAN 1: Eksekusi Instan - HUGE bonus for line clears NOW
+                            let step_score = (lines_cleared * 3000) + (touching * 30);
+                            
+                            // ATURAN 2: Balok Terbesar Diprioritaskan (Balanced)
+                            // Multiplier 25 (max ~7500 poin) supaya AI pilih balok besar duluan, 
+                            // KECUALI jika balok kecil bisa memicu combo besar (> 2 baris).
+                            step_score += difficulty * remaining_blocks.length * 25;
+                            
+                            // ATURAN 3: Segel Tanah Suci
+                            step_score += this.countOpen3x3(new_grid) * 500;
+                            step_score += this.countOpen5x1(new_grid) * 400;
+                            
+                            // BONUS: Baris/kolom hampir penuh = siap clear
+                            step_score += this.countNearCompleteLines(new_grid) * 300;
+                            
+                            // ATURAN 4: Ratakan Tanah
+                            step_score += this.getEdgeBuildingScore(item.block, r, c);
+                            step_score -= this.countHoles(new_grid) * 400;
+                            step_score -= this.countTrappedCells(new_grid) * 1500;
+                            step_score -= this.getGridRoughness(new_grid) * 20;
                             
                             let next_remaining = remaining_blocks.filter((_, index) => index !== i);
                             let current_step = { row: r, col: c, block_idx: item.idx, block: item.block, resulting_grid: new_grid };
@@ -103,6 +245,9 @@ class AIEngine {
         return null;
     }
 
+    // =======================================
+    // Heuristik Zona: 3x3 & 5x1
+    // =======================================
     countOpen3x3(gridArr) {
         let count = 0;
         for (let r = 0; r <= 5; r++) {
@@ -121,57 +266,144 @@ class AIEngine {
 
     countOpen5x1(gridArr) {
         let count = 0;
-        // Horizontal
         for (let r = 0; r < 8; r++) {
             for (let c = 0; c <= 3; c++) {
-                if (gridArr[r][c]===0 && gridArr[r][c+1]===0 && gridArr[r][c+2]===0 && gridArr[r][c+3]===0 && gridArr[r][c+4]===0) {
-                    count++;
-                }
+                if (gridArr[r][c]===0 && gridArr[r][c+1]===0 && gridArr[r][c+2]===0 && gridArr[r][c+3]===0 && gridArr[r][c+4]===0) count++;
             }
         }
-        // Vertical
         for (let c = 0; c < 8; c++) {
             for (let r = 0; r <= 3; r++) {
-                if (gridArr[r][c]===0 && gridArr[r+1][c]===0 && gridArr[r+2][c]===0 && gridArr[r+3][c]===0 && gridArr[r+4][c]===0) {
-                    count++;
-                }
+                if (gridArr[r][c]===0 && gridArr[r+1][c]===0 && gridArr[r+2][c]===0 && gridArr[r+3][c]===0 && gridArr[r+4][c]===0) count++;
             }
         }
         return count;
     }
 
-    // ITEM FALLBACK LOGIC
-    tryItems(currentGrid, allShapes) {
-        // 1. Cek 1x1
-        for(let r=0; r<8; r++) {
-            for(let c=0; c<8; c++) {
-                if(currentGrid[r][c] === 0) {
-                     let simGrid = currentGrid.map(row => [...row]); 
-                     simGrid[r][c]=1;
-                     let clear = false;
-                     for(let k=0; k<8; k++) if(simGrid[k].every(x=>x===1)) clear=true;
-                     for(let k=0; k<8; k++) { let cf=true; for(let m=0; m<8; m++) if(simGrid[m][k]===0) cf=false; if(cf) clear=true; }
-                     if(clear) return { type: '1x1', r, c }; 
+    // =======================================
+    // TAHAP 2: MODE KRITIS - Deep Simulation
+    // =======================================
+    tryItems(currentGrid, validBlocks, availabilities) {
+        let best_item = null;
+        let max_item_score = -Infinity;
+        
+        // Mini-DFS: coba taruh SEMUA balok secara berurutan.
+        // Return skor terbaik jika SEMUA masuk, null jika ada yg mentok.
+        const simulate_all_placements = (grid, blocks) => {
+            if (blocks.length === 0) {
+                // Semua balok berhasil ditaruh! Nilai papan akhir.
+                let score = 0;
+                score += this.countOpen3x3(grid) * 500;
+                score += this.countOpen5x1(grid) * 400;
+                score += this.countNearCompleteLines(grid) * 300;
+                score -= this.countHoles(grid) * 400;
+                score -= this.countTrappedCells(grid) * 1500;
+                score -= this.getGridRoughness(grid) * 20;
+                return score;
+            }
+            
+            let best_score = null;
+            for (let i = 0; i < blocks.length; i++) {
+                let block = blocks[i].block;
+                for (let r = 0; r <= 8 - block.length; r++) {
+                    for (let c = 0; c <= 8 - block[0].length; c++) {
+                        if (state.can_place(block, r, c, grid)) {
+                            let {new_grid, lines_cleared} = state.place_block(block, r, c, grid);
+                            let touching = state.get_touching_edges(block, r, c, grid);
+                            
+                            let step_score = (lines_cleared * 3000) + touching;
+                            let remaining = blocks.filter((_, idx) => idx !== i);
+                            let future = simulate_all_placements(new_grid, remaining);
+                            
+                            if (future !== null) {
+                                let total = step_score + future;
+                                if (best_score === null || total > best_score) best_score = total;
+                            }
+                        }
+                    }
+                }
+            }
+            return best_score;
+        };
+
+        // PRIORITAS 1: Tambah 1x1 (⭐⭐⭐⭐⭐ jika Clear Line)
+        if (availabilities.can1x1) {
+            for (let r = 0; r < 8; r++) {
+                for (let c = 0; c < 8; c++) {
+                    if (currentGrid[r][c] === 0) {
+                        let simGrid = currentGrid.map(row => [...row]);
+                        simGrid[r][c] = 1;
+                        let {grid: clearedGrid, count: lines_cleared} = this.clearLinesOnGrid(simGrid);
+                        let testGrid = lines_cleared > 0 ? clearedGrid : simGrid;
+                        let bonus = lines_cleared > 0 ? 1000000 : 10000;
+                        
+                        let score = simulate_all_placements(testGrid, validBlocks);
+                        if (score !== null) {
+                            let final_score = score + bonus;
+                            if (final_score > max_item_score) {
+                                max_item_score = final_score;
+                                best_item = { type: '1x1', r, c, score: final_score };
+                            }
+                        }
+                    }
                 }
             }
         }
-        // 2. Cek Bomb
-        let bestR=-1, bestC=-1, maxClear=0;
-        const offsets = [[0,0], [-1,0], [1,0], [0,-1], [0,1], [-1,-1], [-1,1], [1,-1], [1,1]]; // 3x3 area
-        for(let r=0; r<8; r++) {
-            for(let c=0; c<8; c++) {
-                let cleared = 0;
-                offsets.forEach(off => {
-                    let nr=r+off[0], nc=c+off[1];
-                    if(nr>=0 && nr<8 && nc>=0 && nc<8 && currentGrid[nr][nc]) cleared++;
-                });
-                if(cleared >= 4 && cleared > maxClear) { maxClear = cleared; bestR=r; bestC=c; }
+        
+        // PRIORITAS 2: Hapus Balok dari Antrean (⭐⭐⭐⭐)
+        // Simulasi: buang 1 balok, coba taruh SEMUA sisa balok
+        if (availabilities.canTrash) {
+            for (let i = 0; i < validBlocks.length; i++) {
+                let remainingAfterDiscard = validBlocks.filter((_, idx) => idx !== i);
+                
+                if (remainingAfterDiscard.length === 0) {
+                    // Buang satu-satunya balok = selamat otomatis
+                    let final_score = 500000;
+                    if (final_score > max_item_score) {
+                        max_item_score = final_score;
+                        best_item = { type: 'trash', queue_idx: validBlocks[i].idx, score: final_score };
+                    }
+                } else {
+                    let score = simulate_all_placements(currentGrid, remainingAfterDiscard);
+                    if (score !== null) {
+                        let final_score = score + 500000;
+                        if (final_score > max_item_score) {
+                            max_item_score = final_score;
+                            best_item = { type: 'trash', queue_idx: validBlocks[i].idx, score: final_score };
+                        }
+                    }
+                }
             }
         }
-        if(bestR !== -1) return { type: 'bomb', r: bestR, c: bestC };
-        // 3. Cek Trash
-        if(allShapes.length > 0) return { type: 'trash', block_idx: allShapes[0].idx };
-        return null;
+        
+        // PRIORITAS 3: Bomb '+' (⭐⭐ - Mode Bertahan Hidup)
+        if (availabilities.canBomb) {
+            const offsets = [[0,0], [-1,0], [1,0], [0,-1], [0,1]];
+            for (let r = 0; r < 8; r++) {
+                for (let c = 0; c < 8; c++) {
+                    let simGrid = currentGrid.map(row => [...row]);
+                    let blasted = 0;
+                    offsets.forEach(off => {
+                        let nr = r + off[0], nc = c + off[1];
+                        if (nr >= 0 && nr < 8 && nc >= 0 && nc < 8 && simGrid[nr][nc] === 1) {
+                            simGrid[nr][nc] = 0;
+                            blasted++;
+                        }
+                    });
+                    if (blasted > 0) {
+                        let score = simulate_all_placements(simGrid, validBlocks);
+                        if (score !== null) {
+                            let final_score = score + 100000;
+                            if (final_score > max_item_score) {
+                                max_item_score = final_score;
+                                best_item = { type: 'bomb', r, c, score: final_score };
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        return best_item;
     }
 }
 
@@ -186,19 +418,18 @@ let currentAnimationStep = 0;
 
 // Default Library
 const defaultShapes = [
-    [[1]], // Dot
-    [[1,1]], [[1],[1]], [[1,1,1]], [[1],[1],[1]], [[1,1,1,1]], [[1],[1],[1],[1]], [[1,1,1,1,1]], [[1],[1],[1],[1],[1]], // Lines
-    [[1,1],[1,1]], [[1,1,1],[1,1,1],[1,1,1]], // Squares
-    [[1,0],[1,1]], [[0,1],[1,1]], [[1,1],[1,0]], [[1,1],[0,1]], // 2x2 L
-    [[1,1,1],[0,1,0]], [[0,1,0],[1,1,1]], [[1,0],[1,1],[1,0]], [[0,1],[1,1],[0,1]], // T
-    [[1,0,0],[1,0,0],[1,1,1]], [[0,0,1],[0,0,1],[1,1,1]], [[1,1,1],[1,0,0],[1,0,0]], [[1,1,1],[0,0,1],[0,0,1]] // 3x3 L
+    [[1]],[[1,1]],[[1],[1]],[[1,1,1]],[[1],[1],[1]],[[1,1,1,1,1]],[[1],[1],[1],[1],[1]],[[1,1],[1,1]],[[1,1,1],[1,1,1],[1,1,1]],[[1,0],[1,1]],[[0,1],[1,1]],[[1,1],[1,0]],[[1,1],[0,1]],[[1,1,1],[0,1,0]],[[0,1,0],[1,1,1]],[[1,1,1],[0,0,1]],[[1,0,0],[1,1,1]],[[1,1,1],[1,0,0]],[[0,0,1],[1,1,1]],[[0,1,1],[1,1,0]],[[1,1,0],[0,1,1]],[[1,0],[1,1],[1,0]],[[0,1],[1,1],[0,1]],[[0,1],[1,1],[1,0]],[[1,0],[1,0],[1,1]],[[1,0],[1,1],[0,1]],[[0,1],[0,1],[1,1]],[[1,1],[0,1],[0,1]],[[1,1],[1,0],[1,0]],[[1,0,0],[1,0,0],[1,1,1]],[[0,0,1],[0,0,1],[1,1,1]],[[1,1,1],[1,0,0],[1,0,0]],[[1,1,1],[0,0,1],[0,0,1]],[[1,0,0],[1,1,1],[1,0,0]],[[0,0,1],[1,1,1],[0,0,1]],[[0,1,0],[0,1,0],[1,1,1]],[[1,1,1],[0,1,0],[0,1,0]],[[1,0],[0,1]],[[0,1],[1,0]],[[1,0,0],[0,1,0],[0,0,1]],[[0,0,1],[0,1,0],[1,0,0]],[[1,1],[1,0],[1,1]],[[1,1],[0,1],[1,1]],[[1,1,1],[1,1,1]],[[1,1],[1,1],[1,1]]
 ];
 let library = [];
 
 // Init LocalStorage Library
 function loadLibrary() {
     const saved = localStorage.getItem('blockzi_pwa_lib');
-    if (saved) { library = JSON.parse(saved); }
+    if (saved) { 
+        library = JSON.parse(saved); 
+        // Force update for users coming from old 23-item layout
+        if (library.length === 23) library = [];
+    }
     if (!library || library.length === 0) {
         library = JSON.parse(JSON.stringify(defaultShapes));
         localStorage.setItem('blockzi_pwa_lib', JSON.stringify(library));
@@ -226,18 +457,48 @@ function createMiniGrid(shape, cssClass = 'mini-cell') {
 }
 
 // Shape Categorization for perfect sorting
-function getShapeCategory(shape) {
-    let rows = shape.length;
-    let cols = shape[0].length;
-    let count = shape.flat().reduce((s,v)=>s+v,0);
+// Manual categorization for perfect visual grouping (Kotak, Garis, Segitiga, L, T, Z)
+const shapeOrder = [
+    // 1. Kotak & Penuh
+    [[1]], 
+    [[1,1],[1,1]], 
+    [[1,1,1],[1,1,1],[1,1,1]], [[1,1,1],[1,1,1]], [[1,1],[1,1],[1,1]],
     
-    if (count === 1) return 1; // Dot
-    if (rows === 1 || cols === 1) return 2; // Lines
-    if (rows === cols && count === rows * cols) return 3; // Squares
-    if (count === 3 && rows === 2 && cols === 2) return 4; // Small L
-    if (count === 4 && ((rows===2 && cols===3) || (rows===3 && cols===2))) return 5; // T Shapes
-    if (count === 5 && rows === 3 && cols === 3) return 6; // Large L
-    return 7; // Others
+    // 2. Garis Lurus
+    [[1,1]], [[1],[1]],
+    [[1,1,1]], [[1],[1],[1]],
+    [[1,1,1,1,1]], [[1],[1],[1],[1],[1]],
+    
+    // 3. Segitiga / Diagonal
+    [[1,0],[0,1]], [[0,1],[1,0]],
+    [[1,0,0],[0,1,0],[0,0,1]], [[0,0,1],[0,1,0],[1,0,0]],
+    
+    // 4. L Kecil (3 blok)
+    [[1,0],[1,1]], [[0,1],[1,1]], [[1,1],[1,0]], [[1,1],[0,1]],
+    
+    // 5. L Sedang (4 blok)
+    [[1,0],[1,0],[1,1]], [[0,1],[0,1],[1,1]], [[1,1],[1,0],[1,0]], [[1,1],[0,1],[0,1]],
+    [[1,1,1],[1,0,0]], [[1,1,1],[0,0,1]], [[1,0,0],[1,1,1]], [[0,0,1],[1,1,1]],
+    
+    // 6. L Besar (5 blok)
+    [[1,0,0],[1,0,0],[1,1,1]], [[0,0,1],[0,0,1],[1,1,1]], [[1,1,1],[1,0,0],[1,0,0]], [[1,1,1],[0,0,1],[0,0,1]],
+    
+    // 7. T Shape
+    [[1,1,1],[0,1,0]], [[0,1,0],[1,1,1]], [[1,0],[1,1],[1,0]], [[0,1],[1,1],[0,1]],
+    [[1,0,0],[1,1,1],[1,0,0]], [[0,0,1],[1,1,1],[0,0,1]], [[0,1,0],[0,1,0],[1,1,1]], [[1,1,1],[0,1,0],[0,1,0]],
+    
+    // 8. Zigzag (Z) dan U
+    [[0,1,1],[1,1,0]], [[1,1,0],[0,1,1]],
+    [[1,0],[1,1],[0,1]], [[0,1],[1,1],[1,0]],
+    [[1,1],[1,0],[1,1]], [[1,1],[0,1],[1,1]]
+];
+
+function getShapeSortIndex(shape) {
+    let str = JSON.stringify(shape);
+    for(let i=0; i<shapeOrder.length; i++){
+        if (JSON.stringify(shapeOrder[i]) === str) return i;
+    }
+    return 999;
 }
 
 // Render Library Palette
@@ -245,20 +506,19 @@ function renderLibrary() {
     const pal = document.getElementById('palette');
     pal.innerHTML = '';
     
-    // Intelligent sorting
+    // Intelligent sorting: group by shape family (Squares, Lines, L, T, etc.)
     library.sort((a, b) => {
-        let catA = getShapeCategory(a);
-        let catB = getShapeCategory(b);
-        if (catA !== catB) return catA - catB; // Sort by category first
+        let idxA = getShapeSortIndex(a);
+        let idxB = getShapeSortIndex(b);
+        if (idxA !== idxB) return idxA - idxB;
         
+        // Fallback for custom blocks
         let countA = a.flat().reduce((s,v)=>s+v,0);
         let countB = b.flat().reduce((s,v)=>s+v,0);
-        if (countA !== countB) return countA - countB; // Then by block count
-        
-        // If same category and count, sort Horizontal before Vertical
-        let ratioA = a[0].length / a.length;
-        let ratioB = b[0].length / b.length;
-        return ratioB - ratioA; 
+        if (countA !== countB) return countA - countB;
+        if (a.length !== b.length) return a.length - b.length;
+        if (a[0].length !== b[0].length) return a[0].length - b[0].length;
+        return JSON.stringify(b).localeCompare(JSON.stringify(a));
     });
     
     library.forEach((shape, index) => {
@@ -362,7 +622,7 @@ function updateBoardVisuals() {
     }
     
     // 2. Clear item & queue styling
-    document.querySelectorAll('.item-bomb, .item-1x1, .item-trash').forEach(e => e.className = e.className.replace(/item-\S+/g, '').trim());
+    document.querySelectorAll('.item-bomb, .item-1x1, .item-hammer').forEach(e => e.className = e.className.replace(/item-\S+/g, '').trim());
     document.querySelectorAll('.queue-slot').forEach(el => { 
         el.style.border = '';
         let badge = el.querySelector('.queue-badge');
@@ -406,15 +666,18 @@ function updateBoardVisuals() {
     } else if (itemRecommendation) {
         // Render item visualizer
         if (itemRecommendation.type === '1x1') {
-            document.getElementById(`board-${itemRecommendation.r}-${itemRecommendation.c}`).classList.add('item-1x1');
+            let cell = document.getElementById(`board-${itemRecommendation.r}-${itemRecommendation.c}`);
+            if (cell) cell.classList.add('item-1x1');
+        } else if (itemRecommendation.type === 'trash') {
+            // Highlight the queue slot to discard
+            let qSlot = document.querySelector(`.queue-slot[data-idx="${itemRecommendation.queue_idx}"]`);
+            if (qSlot) qSlot.classList.add('item-trash');
         } else if (itemRecommendation.type === 'bomb') {
-            const offsets = [[0,0], [-1,0], [1,0], [0,-1], [0,1], [-1,-1], [-1,1], [1,-1], [1,1]];
+            const offsets = [[0,0], [-1,0], [1,0], [0,-1], [0,1]];
             offsets.forEach(off => {
                 let nr = itemRecommendation.r + off[0], nc = itemRecommendation.c + off[1];
                 if(nr>=0 && nr<8 && nc>=0 && nc<8) document.getElementById(`board-${nr}-${nc}`).classList.add('item-bomb');
             });
-        } else if (itemRecommendation.type === 'trash') {
-            document.querySelector(`.queue-slot[data-idx="${itemRecommendation.block_idx}"]`).classList.add('item-trash');
         }
     }
 }
@@ -512,12 +775,6 @@ document.getElementById('clear-board-btn').onclick = () => {
     clearRecommendation();
 };
 
-document.getElementById('clear-queue-btn').onclick = () => {
-    spawnerQueues = [null, null, null];
-    clearRecommendation();
-    updateSpawnerVisuals();
-};
-
 document.getElementById('calculate-btn').onclick = () => {
     let validBlocks = [];
     for(let i=0; i<3; i++) if(spawnerQueues[i]) validBlocks.push({idx: i, block: spawnerQueues[i]});
@@ -531,7 +788,10 @@ document.getElementById('calculate-btn').onclick = () => {
     let result = ai.find_best_move(state, spawnerQueues);
     let t1 = performance.now();
     
-    if (result) {
+    // Cek apakah SEMUA balok berhasil ditaruh
+    let allPlaced = result && result.path && result.path.length === validBlocks.length;
+    
+    if (allPlaced) {
         currentRecommendation = result.path;
         document.getElementById('ai-status').textContent = `Berhasil! (Skor: ${result.score})`;
         document.getElementById('ai-status').className = "status-badge";
@@ -540,19 +800,52 @@ document.getElementById('calculate-btn').onclick = () => {
         updateBoardVisuals(); 
         
     } else {
-        // ITEM FALLBACK
-        document.getElementById('ai-status').textContent = "GAME OVER! Cari Item...";
-        document.getElementById('ai-status').className = "status-badge alert";
+        let availabilities = {
+            can1x1: document.getElementById('use-1x1-toggle').checked,
+            canTrash: document.getElementById('use-hammer-toggle').checked,
+            canBomb: document.getElementById('use-bomb-toggle').checked
+        };
         
-        itemRecommendation = ai.tryItems(state.grid, validBlocks);
-        if (itemRecommendation) {
-            if (itemRecommendation.type === '1x1') document.getElementById('ai-status').innerHTML = "🚑 MENTOK! Gunakan Item <b>1x1</b>";
-            else if (itemRecommendation.type === 'bomb') document.getElementById('ai-status').innerHTML = "💣 MENTOK! Gunakan <b>BOM</b>";
-            else if (itemRecommendation.type === 'trash') document.getElementById('ai-status').innerHTML = "🗑️ MENTOK! Gunakan <b>HAPUS</b>";
+        if (availabilities.can1x1 || availabilities.canTrash || availabilities.canBomb) {
+            // ITEM FALLBACK
+            document.getElementById('ai-status').textContent = "Evaluasi Masa Depan...";
+            document.getElementById('ai-status').className = "status-badge alert";
+            
+            setTimeout(() => {
+                let itemRec = ai.tryItems(state.grid, validBlocks, availabilities);
+                if (itemRec) {
+                    itemRecommendation = itemRec;
+                    
+                    if (itemRecommendation.type === '1x1' && itemRecommendation.score > 900000) {
+                        document.getElementById('ai-status').innerHTML = "🌟 BINTANG 5: Gunakan <b>Tambah 1x1</b>";
+                    } else if (itemRecommendation.type === '1x1') {
+                        document.getElementById('ai-status').innerHTML = "⭐ BINTANG 3: Gunakan <b>Tambah 1x1</b>";
+                    } else if (itemRecommendation.type === 'trash') {
+                        document.getElementById('ai-status').innerHTML = "🌟 BINTANG 4: <b>Hapus Balok</b> di antrean";
+                    } else if (itemRecommendation.type === 'bomb') {
+                        document.getElementById('ai-status').innerHTML = "⚠️ BINTANG 2: Gunakan <b>Bomb '+'</b>";
+                    }
+                } else {
+                    document.getElementById('ai-status').textContent = "😭 GAME OVER (Semua Mentok)";
+                    if (result && result.path && result.path.length > 0) {
+                        currentRecommendation = result.path;
+                        document.getElementById('ai-status').textContent += " - Lihat langkah terakhir di papan";
+                        document.getElementById('apply-btn').disabled = false;
+                    }
+                }
+                updateBoardVisuals();
+            }, 50);
         } else {
-            document.getElementById('ai-status').textContent = "😭 GAME OVER BENERAN!";
+            // NO ITEMS ALLOWED
+            document.getElementById('ai-status').textContent = "🛑 GAME OVER! (Mentok)";
+            if (result && result.path && result.path.length > 0) {
+                currentRecommendation = result.path;
+                document.getElementById('ai-status').textContent += " - Lihat langkah terakhir";
+                document.getElementById('apply-btn').disabled = false;
+            }
+            document.getElementById('ai-status').className = "status-badge alert";
+            updateBoardVisuals();
         }
-        updateBoardVisuals();
     }
 };
 

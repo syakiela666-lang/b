@@ -11,20 +11,55 @@
 <body>
     <div class="main-container">
         
-        <!-- Board Panel -->
-        <div class="compact-panel">
+        <!-- Left Column: Board Panel -->
+        <div class="compact-panel board-col">
             <div class="panel-header-compact">
                 <span id="ai-status" class="status-badge">Input Balok...</span>
                 <button id="clear-board-btn" class="btn-tiny btn-danger">🗑️ Board</button>
             </div>
-            <div id="main-board" class="board"></div>
+            
+            <div class="board-container">
+                <div class="coord-corner"></div>
+                <div class="coord-top">
+                    <div>1</div><div>2</div><div>3</div><div>4</div><div>5</div><div>6</div><div>7</div><div>8</div>
+                </div>
+                <div class="coord-left">
+                    <div>1</div><div>2</div><div>3</div><div>4</div><div>5</div><div>6</div><div>7</div><div>8</div>
+                </div>
+                <div id="main-board" class="board"></div>
+            </div>
         </div>
 
         <!-- Spawner & Actions Panel -->
         <div class="compact-panel">
-            <div class="panel-header-compact">
-                <span style="font-size:12px; color:#94a3b8;">Antrean (Tap utk hapus):</span>
-                <button id="clear-queue-btn" class="btn-tiny btn-danger">🗑️ Antrean</button>
+            <div class="panel-header-compact" style="flex-direction: column; align-items: stretch; gap: 8px;">
+                <div style="display:flex; justify-content: space-between; align-items: center;">
+                    <span style="font-size:12px; color:#94a3b8;">Antrean (Tap utk Hapus):</span>
+                    <span style="font-size:11px; color:#f59e0b; font-weight:bold;">💡 Ketersediaan Bantuan:</span>
+                </div>
+                <div class="bantuan-toggles">
+                    <div class="bantuan-item">
+                        <label class="switch">
+                            <input type="checkbox" id="use-1x1-toggle" checked>
+                            <span class="slider"></span>
+                        </label>
+                        <span>1x1</span>
+                    </div>
+                    <div class="bantuan-item">
+                        <label class="switch">
+                            <input type="checkbox" id="use-hammer-toggle" checked>
+                            <span class="slider"></span>
+                        </label>
+                        <span>Hapus</span>
+                    </div>
+                    <div class="bantuan-item">
+                        <label class="switch">
+                            <input type="checkbox" id="use-bomb-toggle" checked>
+                            <span class="slider"></span>
+                        </label>
+                        <span>Bomb</span>
+                    </div>
+                </div>
             </div>
             <div class="queues-and-actions">
                 <div class="queues-container" id="spawner">

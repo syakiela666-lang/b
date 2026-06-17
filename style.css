@@ -52,7 +52,37 @@ body {
     margin-bottom: 8px;
 }
 
-/* Board */
+/* Board & Coordinates */
+.board-container {
+    display: grid;
+    grid-template-columns: 16px 1fr;
+    grid-template-rows: 16px 1fr;
+    gap: 2px;
+    width: 100%;
+    margin: 0 auto;
+}
+
+.coord-top {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 2px;
+}
+
+.coord-left {
+    display: grid;
+    grid-template-rows: repeat(8, 1fr);
+    gap: 2px;
+}
+
+.coord-top div, .coord-left div {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    color: #94a3b8;
+    font-weight: bold;
+}
+
 .board {
     display: grid;
     grid-template-columns: repeat(8, 1fr);
@@ -61,7 +91,6 @@ body {
     width: 100%;
     aspect-ratio: 1/1;
     touch-action: none;
-    margin: 0 auto;
 }
 
 .cell {
@@ -95,6 +124,7 @@ body {
 /* Items */
 .board .cell.item-bomb { background: var(--warning); animation: blink 0.5s infinite; }
 .board .cell.item-1x1 { background: #a855f7; animation: blink 0.5s infinite; }
+.board .cell.item-hammer { background: var(--danger); animation: blink 0.5s infinite; }
 @keyframes blink { 0% { opacity: 0.5; } 100% { opacity: 1; } }
 
 /* Queues & Actions */
@@ -156,11 +186,9 @@ body {
 /* Grid Library */
 .palette-container-grid {
     display: grid;
-    grid-template-columns: repeat(8, 1fr);
+    grid-template-columns: repeat(9, 1fr);
     gap: 4px;
-    max-height: 280px;
-    overflow-y: auto;
-    padding-right: 4px;
+    padding-right: 0px;
 }
 .palette-container-grid::-webkit-scrollbar { width: 4px; }
 .palette-container-grid::-webkit-scrollbar-thumb { background: #475569; border-radius: 2px; }
@@ -221,3 +249,13 @@ button:disabled { opacity: 0.5; }
 .btn-success { background: var(--success); }
 .btn-danger { background: var(--danger); }
 .btn-secondary { background: #334155; }
+
+/* Toggle Switch */
+.bantuan-toggles { display: flex; gap: 12px; justify-content: flex-end; align-items: center; }
+.bantuan-item { display: flex; align-items: center; gap: 4px; font-size: 10px; color: #94a3b8; font-weight: bold; }
+.switch { position: relative; display: inline-block; width: 28px; height: 16px; }
+.switch input { opacity: 0; width: 0; height: 0; }
+.slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #334155; transition: .3s; border-radius: 16px; }
+.slider:before { position: absolute; content: ""; height: 12px; width: 12px; left: 2px; bottom: 2px; background-color: white; transition: .3s; border-radius: 50%; box-shadow: 0 2px 4px rgba(0,0,0,0.3); }
+input:checked + .slider { background-color: var(--success); }
+input:checked + .slider:before { transform: translateX(12px); }

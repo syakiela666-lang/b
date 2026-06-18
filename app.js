@@ -411,7 +411,7 @@ class AIEngine {
 }
 
 // ==========================================
-// UI STATE & LOGIC
+// UI STATE & LOGIC (INTERACTIVE CATEGORY MANAGER)
 // ==========================================
 const state = new GameState();
 const ai = new AIEngine();
@@ -419,27 +419,79 @@ let spawnerQueues = [null, null, null];
 let currentRecommendation = null;
 let itemRecommendation = null;
 
-// UPDATED: 47 default shapes including new 'U' shapes
-const defaultShapes = [
-    [[1]],[[1,1],[1,1]],[[1,1,1],[1,1,1],[1,1,1]],[[1,1,1],[1,1,1]],[[1,1],[1,1],[1,1]],[[1,1]],[[1],[1]],[[1,1,1]],[[1],[1],[1]],[[1,1,1,1,1]],[[1],[1],[1],[1],[1]],[[1,0],[0,1]],[[0,1],[1,0]],[[1,0,0],[0,1,0],[0,0,1]],[[0,0,1],[0,1,0],[1,0,0]],[[1,0],[1,1]],[[0,1],[1,1]],[[1,1],[1,0]],[[1,1],[0,1]],[[1,0],[1,0],[1,1]],[[0,1],[0,1],[1,1]],[[1,1],[1,0],[1,0]],[[1,1],[0,1],[0,1]],[[1,1,1],[1,0,0]],[[1,1,1],[0,0,1]],[[1,0,0],[1,1,1]],[[0,0,1],[1,1,1]],[[1,0,0],[1,0,0],[1,1,1]],[[0,0,1],[0,0,1],[1,1,1]],[[1,1,1],[1,0,0],[1,0,0]],[[1,1,1],[0,0,1],[0,0,1]],[[1,1,1],[0,1,0]],[[0,1,0],[1,1,1]],[[1,0],[1,1],[1,0]],[[0,1],[1,1],[0,1]],[[1,0,0],[1,1,1],[1,0,0]],[[0,0,1],[1,1,1],[0,0,1]],[[0,1,0],[0,1,0],[1,1,1]],[[1,1,1],[0,1,0],[0,1,0]],[[0,1,1],[1,1,0]],[[1,1,0],[0,1,1]],[[1,0],[1,1],[0,1]],[[0,1],[1,1],[1,0]],[[1,1],[1,0],[1,1]],[[1,1],[0,1],[1,1]],[[1,1,1],[1,0,1]],[[1,0,1],[1,1,1]]
-];
+// Kategori Default (Sudah di-Sort dan Dirapikan)
+const defaultCategories = {
+    "TITIK": [
+        [[1]], 
+        [[1,0],[0,1]], [[0,1],[1,0]], 
+        [[1,0,0],[0,1,0],[0,0,1]], [[0,0,1],[0,1,0],[1,0,0]]
+    ],
+    "GARIS": [
+        [[1,1]], [[1],[1]], 
+        [[1,1,1]], [[1],[1],[1]], 
+        [[1,1,1,1,1]], [[1],[1],[1],[1],[1]]
+    ],
+    "KOTAK": [
+        [[1,1],[1,1]], 
+        [[1,1,1],[1,1,1],[1,1,1]], 
+        [[1,1,1],[1,1,1]], [[1,1],[1,1],[1,1]]
+    ],
+    "SIKU": [
+        [[1,0],[1,1]], [[0,1],[1,1]], 
+        [[1,1],[1,0]], [[1,1],[0,1]]
+    ],
+    "SEGITIGA": [
+        [[0,1,0],[1,1,1]], [[1,1,1],[0,1,0]], 
+        [[1,0],[1,1],[1,0]], [[0,1],[1,1],[0,1]]
+    ],
+    "Z": [
+        [[0,1,1],[1,1,0]], [[1,1,0],[0,1,1]], 
+        [[1,0],[1,1],[0,1]], [[0,1],[1,1],[1,0]]
+    ],
+    "L 2": [
+        [[1,0],[1,0],[1,1]], [[0,1],[0,1],[1,1]], 
+        [[1,1],[1,0],[1,0]], [[1,1],[0,1],[0,1]],
+        [[1,1,1],[1,0,0]], [[1,1,1],[0,0,1]], 
+        [[1,0,0],[1,1,1]], [[0,0,1],[1,1,1]]
+    ],
+    "L 3": [
+        [[1,0,0],[1,0,0],[1,1,1]], [[0,0,1],[0,0,1],[1,1,1]], 
+        [[1,1,1],[1,0,0],[1,0,0]], [[1,1,1],[0,0,1],[0,0,1]]
+    ],
+    "T": [
+        [[1,0,0],[1,1,1],[1,0,0]], [[0,0,1],[1,1,1],[0,0,1]], 
+        [[0,1,0],[0,1,0],[1,1,1]], [[1,1,1],[0,1,0],[0,1,0]]
+    ],
+    "U": [
+        [[1,1,1],[1,0,1]], [[1,0,1],[1,1,1]], 
+        [[1,1],[1,0],[1,1]], [[1,1],[0,1],[1,1]]
+    ]
+};
 
-const shapeOrder = [
-    [[1]],[[1,1],[1,1]],[[1,1,1],[1,1,1],[1,1,1]],[[1,1,1],[1,1,1]],[[1,1],[1,1],[1,1]],[[1,1]],[[1],[1]],[[1,1,1]],[[1],[1],[1]],[[1,1,1,1,1]],[[1],[1],[1],[1],[1]],[[1,0],[0,1]],[[0,1],[1,0]],[[1,0,0],[0,1,0],[0,0,1]],[[0,0,1],[0,1,0],[1,0,0]],[[1,0],[1,1]],[[0,1],[1,1]],[[1,1],[1,0]],[[1,1],[0,1]],[[1,0],[1,0],[1,1]],[[0,1],[0,1],[1,1]],[[1,1],[1,0],[1,0]],[[1,1],[0,1],[0,1]],[[1,1,1],[1,0,0]],[[1,1,1],[0,0,1]],[[1,0,0],[1,1,1]],[[0,0,1],[1,1,1]],[[1,0,0],[1,0,0],[1,1,1]],[[0,0,1],[0,0,1],[1,1,1]],[[1,1,1],[1,0,0],[1,0,0]],[[1,1,1],[0,0,1],[0,0,1]],[[1,1,1],[0,1,0]],[[0,1,0],[1,1,1]],[[1,0],[1,1],[1,0]],[[0,1],[1,1],[0,1]],[[1,0,0],[1,1,1],[1,0,0]],[[0,0,1],[1,1,1],[0,0,1]],[[0,1,0],[0,1,0],[1,1,1]],[[1,1,1],[0,1,0],[0,1,0]],[[0,1,1],[1,1,0]],[[1,1,0],[0,1,1]],[[1,0],[1,1],[0,1]],[[0,1],[1,1],[1,0]],[[1,1],[1,0],[1,1]],[[1,1],[0,1],[1,1]],[[1,1,1],[1,0,1]],[[1,0,1],[1,1,1]]
-];
-
-let library = [];
+let libraryCategories = {};
 
 function loadLibrary() {
-    const saved = localStorage.getItem('blockzi_pwa_lib');
+    const saved = localStorage.getItem('blockzi_pwa_cats');
     if (saved) { 
-        library = JSON.parse(saved); 
-        if (library.length !== 47) library = []; // Mencegah reset jika jumlah balok tidak pas 47
+        try {
+            let parsed = JSON.parse(saved);
+            // Cegah error jika user masih pakai save file lama (yang bentuknya array)
+            if (Array.isArray(parsed)) {
+                libraryCategories = JSON.parse(JSON.stringify(defaultCategories));
+            } else {
+                libraryCategories = parsed;
+            }
+        } catch(e) {
+            libraryCategories = JSON.parse(JSON.stringify(defaultCategories));
+        }
+    } else {
+        libraryCategories = JSON.parse(JSON.stringify(defaultCategories));
     }
-    if (!library || library.length === 0) {
-        library = JSON.parse(JSON.stringify(defaultShapes));
-        localStorage.setItem('blockzi_pwa_lib', JSON.stringify(library));
-    }
+    renderLibrary();
+}
+
+function saveLibrary() {
+    localStorage.setItem('blockzi_pwa_cats', JSON.stringify(libraryCategories));
     renderLibrary();
 }
 
@@ -461,47 +513,162 @@ function createMiniGrid(shape, cssClass = 'mini-cell') {
     return mini;
 }
 
-function getShapeSortIndex(shape) {
-    let str = JSON.stringify(shape);
-    for(let i=0; i<shapeOrder.length; i++){
-        if (JSON.stringify(shapeOrder[i]) === str) return i;
-    }
-    return 999;
-}
+// Render Dinamis & Interaktif
+let draggedItem = null; // Memori sementara untuk menyimpan data balok yang di-drag
 
+// Render Dinamis & Interaktif + DRAG AND DROP
 function renderLibrary() {
     const pal = document.getElementById('palette');
     pal.innerHTML = '';
     
-    library.sort((a, b) => {
-        let idxA = getShapeSortIndex(a);
-        let idxB = getShapeSortIndex(b);
-        if (idxA !== idxB) return idxA - idxB;
+    for (let category in libraryCategories) {
         
-        let countA = a.flat().reduce((s,v)=>s+v,0);
-        let countB = b.flat().reduce((s,v)=>s+v,0);
-        if (countA !== countB) return countA - countB;
-        if (a.length !== b.length) return a.length - b.length;
-        if (a[0].length !== b[0].length) return a[0].length - b[0].length;
-        return JSON.stringify(b).localeCompare(JSON.stringify(a));
-    });
-    
-    library.forEach((shape, index) => {
-        const item = document.createElement('div');
-        item.className = 'p-item';
-        item.appendChild(createMiniGrid(shape));
-        item.onclick = () => addToSpawner(shape);
-        item.oncontextmenu = (e) => {
-            e.preventDefault();
-            if (confirm("Hapus balok ini dari Koleksi?")) {
-                library.splice(index, 1);
-                localStorage.setItem('blockzi_pwa_lib', JSON.stringify(library));
-                renderLibrary();
+        // --- 1. HEADER KATEGORI ---
+        let title = document.createElement('div');
+        title.className = 'lib-category-title';
+        title.innerText = category;
+        title.title = "Klik untuk ubah nama atau hapus kategori";
+        title.onclick = () => {
+            let newName = prompt(`Ubah nama kategori "${category}" menjadi:\n(Ketik "DELETE" untuk menghapus kategori ini)`, category);
+            
+            if (newName === "DELETE") {
+                if (confirm(`YAKIN HAPUS KATEGORI "${category}"?\nSemua balok di dalamnya akan ikut terhapus!`)) {
+                    delete libraryCategories[category];
+                    saveLibrary();
+                }
+            } else if (newName && newName.trim() !== "" && newName.toUpperCase() !== category) {
+                newName = newName.toUpperCase();
+                libraryCategories[newName] = libraryCategories[category];
+                delete libraryCategories[category];
+                saveLibrary();
             }
         };
-        pal.appendChild(item);
-    });
+        pal.appendChild(title);
+
+        // --- 2. ZONA DROP KATEGORI (Wadah) ---
+        let gridWrapper = document.createElement('div');
+        gridWrapper.className = 'palette-container-grid';
+        gridWrapper.style.marginBottom = '12px';
+        gridWrapper.style.transition = 'background 0.2s';
+
+        // Efek visual saat ada balok melayang di atas zona ini
+        gridWrapper.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            gridWrapper.style.background = 'rgba(56, 189, 248, 0.15)'; // Nyala biru transparan
+        });
+        gridWrapper.addEventListener('dragleave', (e) => {
+            gridWrapper.style.background = 'transparent';
+        });
+        
+        // Ketika balok dilepaskan di ZONA KOSONG/Wadah
+        gridWrapper.addEventListener('drop', (e) => {
+            e.preventDefault();
+            gridWrapper.style.background = 'transparent';
+            
+            // Cek apakah dilepas tepat di wadahnya (bukan nimpa balok lain)
+            if (draggedItem && (e.target === gridWrapper || e.target.tagName === 'SPAN')) {
+                let sourceCat = draggedItem.category;
+                let sourceIdx = draggedItem.index;
+
+                // Jika dipindah ke kategori berbeda
+                if (sourceCat !== category) {
+                    let shapeToMove = libraryCategories[sourceCat][sourceIdx];
+                    libraryCategories[sourceCat].splice(sourceIdx, 1); // Hapus dari asal
+                    libraryCategories[category].push(shapeToMove); // Taruh di akhir kategori ini
+                    saveLibrary();
+                }
+            }
+        });
+
+        // --- 3. ISI BALOKNYA ---
+        if (libraryCategories[category].length === 0) {
+            gridWrapper.innerHTML = '<span style="font-size:10px; color:#475569; font-style:italic; grid-column: 1 / -1; padding-bottom: 8px; pointer-events:none;">(Drop Balok ke Sini)</span>';
+        } else {
+            libraryCategories[category].forEach((shape, index) => {
+                const divItem = document.createElement('div');
+                divItem.className = 'p-item';
+                divItem.draggable = true; // SULAP JADI BISA DI-DRAG
+                divItem.appendChild(createMiniGrid(shape));
+
+                // Aksi Tap Biasa
+                divItem.onclick = () => addToSpawner(shape);
+
+                // Aksi Tahan & Lepas Tanpa Pindah (Hapus)
+                divItem.oncontextmenu = (e) => {
+                    e.preventDefault();
+                    if (confirm("Yakin ingin menghapus balok ini dari koleksi?")) {
+                        libraryCategories[category].splice(index, 1);
+                        saveLibrary();
+                    }
+                };
+
+                // --- 4. EVENT MULAI DRAG (BALOK DIANGKAT) ---
+                divItem.addEventListener('dragstart', (e) => {
+                    draggedItem = { category: category, index: index };
+                    setTimeout(() => divItem.style.opacity = '0.4', 0); // Bikin agak transparan
+                });
+                divItem.addEventListener('dragend', (e) => {
+                    divItem.style.opacity = '1'; // Kembalikan warna
+                    draggedItem = null;
+                });
+
+                // --- 5. EVENT DROP MENIMPA BALOK LAIN (REORDER/MENYELIPKAN) ---
+                divItem.addEventListener('dragover', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation(); // Cegah event bocor ke wadah gridWrapper
+                    divItem.style.border = '2px solid #38bdf8'; // Border nyala saat disasar
+                });
+                divItem.addEventListener('dragleave', (e) => {
+                    divItem.style.border = '1px solid #334155';
+                });
+                divItem.addEventListener('drop', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    divItem.style.border = '1px solid #334155';
+
+                    if (draggedItem) {
+                        let sourceCat = draggedItem.category;
+                        let sourceIdx = draggedItem.index;
+                        let targetCat = category;
+                        let targetIdx = index;
+
+                        // Kalau dilepas di tempat yang sama persis, abaikan
+                        if (sourceCat === targetCat && sourceIdx === targetIdx) return; 
+
+                        let shapeToMove = libraryCategories[sourceCat][sourceIdx];
+                        libraryCategories[sourceCat].splice(sourceIdx, 1); // Cabut dari posisi lama
+
+                        // Rumus geser array jika dipindah ke kategori yang sama
+                        if (sourceCat === targetCat && sourceIdx < targetIdx) {
+                            targetIdx -= 1;
+                        }
+                        
+                        // Sisipkan di posisi baru
+                        libraryCategories[targetCat].splice(targetIdx, 0, shapeToMove);
+                        saveLibrary();
+                    }
+                });
+
+                gridWrapper.appendChild(divItem);
+            });
+        }
+        pal.appendChild(gridWrapper);
+    }
 }
+
+// Fungsi Tombol Tambah Kategori Baru
+document.getElementById('add-cat-btn').onclick = () => {
+    let newCat = prompt("Masukkan nama Kategori Baru:");
+    if (newCat && newCat.trim() !== "") {
+        newCat = newCat.toUpperCase();
+        if (libraryCategories[newCat]) {
+            alert("Kategori tersebut sudah ada!");
+        } else {
+            libraryCategories[newCat] = []; // Bikin rumah kosongnya
+            saveLibrary();
+        }
+    }
+};
 
 function addToSpawner(shape) {
     let emptyIdx = spawnerQueues.indexOf(null);
@@ -689,34 +856,40 @@ document.getElementById('save-lib-btn').onclick = () => {
         trimmed.push(row); 
     }
     
-    let isDuplicate = library.some(existing => {
-        if (existing.length !== trimmed.length) return false;
-        if (existing[0].length !== trimmed[0].length) return false;
-        for (let i = 0; i < existing.length; i++) {
-            for (let j = 0; j < existing[0].length; j++) {
-                if (existing[i][j] !== trimmed[i][j]) return false;
-            }
+    // Cek duplikasi di seluruh kategori
+    let isDuplicate = false;
+    for (let cat in libraryCategories) {
+        if (libraryCategories[cat].some(existing => JSON.stringify(existing) === JSON.stringify(trimmed))) {
+            isDuplicate = true;
         }
-        return true;
-    });
+    }
     
     if (isDuplicate) {
         alert("Balok ini sudah ada di Koleksi Anda!");
         return;
     }
     
-    library.push(trimmed);
-    localStorage.setItem('blockzi_pwa_lib', JSON.stringify(library));
-    renderLibrary();
+    // 3. Prompt penentuan kategori saat menyimpan balok baru
+    let catName = prompt("Balok berhasil dibuat!\n\nMasukkan ke Kategori mana? (Ketik nama kategori yang sudah ada atau buat nama baru):", "BALOK CUSTOM");
+    if (catName === null) return; // Dibatalkan
+    if (catName.trim() === "") catName = "BALOK CUSTOM";
+    catName = catName.toUpperCase();
+
+    if (!libraryCategories[catName]) libraryCategories[catName] = [];
+    libraryCategories[catName].push(trimmed);
+    
+    saveLibrary();
     document.getElementById('clear-builder-btn').click();
-    document.getElementById('palette').scrollTop = document.getElementById('palette').scrollHeight;
+    
+    const paletteContainer = document.querySelector('.library-grouped-container');
+    if (paletteContainer) paletteContainer.scrollTop = paletteContainer.scrollHeight;
 };
 
 function clearRecommendation() {
     currentRecommendation = null;
     itemRecommendation = null;
     
-    document.getElementById('ai-status').textContent = "Menunggu Input...";
+    document.getElementById('ai-status').textContent = "Status: Mode Input";
     document.getElementById('ai-status').className = "status-badge";
     document.getElementById('apply-btn').disabled = true;
     updateBoardVisuals();
@@ -798,48 +971,39 @@ document.getElementById('calculate-btn').onclick = () => {
     }
 };
 
-document.getElementById('apply-btn').onclick = () => {
-    if (!currentRecommendation) return;
-    
-    let lastStep = currentRecommendation[currentRecommendation.length - 1];
-    state.grid = lastStep.resulting_grid;
-    
-    for (let step of currentRecommendation) spawnerQueues[step.block_idx] = null;
-    
-    clearRecommendation();
-    updateSpawnerVisuals();
-};
-
+// 4. Update Fungsi Export: Sekarang langsung mengkopi Settingan (Konfigurasi Object)
 document.getElementById('export-lib-btn').onclick = () => {
-    let dataStr = JSON.stringify(library);
+    let dataStr = JSON.stringify(libraryCategories);
     navigator.clipboard.writeText(dataStr).then(() => {
-        alert("Kode koleksi berhasil dicopy ke Clipboard!\n\nSimpan di Notes Anda untuk backup.");
+        alert("Kode Pengaturan Balok berhasil dicopy!\n\nKirimkan kode text ini ke AI jika susunannya sudah fix, agar AI bisa mematenkannya.");
     }).catch(() => {
         prompt("Gagal copy otomatis. Copy kode di bawah ini secara manual:", dataStr);
     });
 };
 
 document.getElementById('import-lib-btn').onclick = () => {
-    let input = prompt("Paste kode JSON koleksi balok Anda di sini:");
+    let input = prompt("Paste kode JSON pengaturan balok Anda di sini:");
     if (!input) return;
     try {
         let parsed = JSON.parse(input);
-        if (Array.isArray(parsed)) {
-            library = parsed;
-            localStorage.setItem('blockzi_pwa_lib', JSON.stringify(library));
-            renderLibrary();
-            alert(`Sukses import ${library.length} balok!`);
+        if (typeof parsed === 'object' && !Array.isArray(parsed)) {
+            libraryCategories = parsed;
+            saveLibrary();
+            alert(`Sukses import pengaturan balok!`);
         } else {
-            alert("Format salah! Harus berupa Array JSON.");
+            alert("Format salah! Sistem yang baru membutuhkan data object kategori, bukan sekedar array.");
         }
     } catch(e) {
-        alert("Gagal membaca data. Pastikan itu adalah kode JSON dari Export.");
+        alert("Gagal membaca data. Pastikan itu adalah kode JSON dari tombol Export.");
     }
 };
 
 // ==========================================
 // INITIALIZATION
 // ==========================================
+// Kita hapus registry lama supaya migrasi ke sistem kategori baru berjalan mulus
+localStorage.removeItem('blockzi_pwa_lib');
+
 loadLibrary();
 initBoard();
 initBuilder();

@@ -11,33 +11,43 @@
 <body>
     <div class="main-container">
         
-        <!-- Left Column: Board Panel -->
-        <div class="compact-panel board-col">
-            <div class="panel-header-compact">
-                <span id="ai-status" class="status-badge">Input Balok...</span>
-                <button id="clear-board-btn" class="btn-tiny btn-danger">🗑️ Board</button>
-            </div>
+        <div class="left-col">
             
-            <div class="board-container">
-                <div class="coord-corner"></div>
-                <div class="coord-top">
-                    <div>1</div><div>2</div><div>3</div><div>4</div><div>5</div><div>6</div><div>7</div><div>8</div>
+            <div class="compact-panel board-col">
+                <div class="panel-header-compact">
+                    <span id="ai-status" class="status-badge">Status: Mode Input</span>
+                    <button id="clear-board-btn" class="btn-tiny btn-danger">🗑️ Reset Board</button>
                 </div>
-                <div class="coord-left">
-                    <div>1</div><div>2</div><div>3</div><div>4</div><div>5</div><div>6</div><div>7</div><div>8</div>
+                
+                <div class="board-container">
+                    <div class="coord-corner"></div>
+                    <div class="coord-top">
+                        <div>1</div><div>2</div><div>3</div><div>4</div><div>5</div><div>6</div><div>7</div><div>8</div>
+                    </div>
+                    <div class="coord-left">
+                        <div>1</div><div>2</div><div>3</div><div>4</div><div>5</div><div>6</div><div>7</div><div>8</div>
+                    </div>
+                    <div id="main-board" class="board"></div>
                 </div>
-                <div id="main-board" class="board"></div>
             </div>
-        </div>
 
-        <!-- Spawner & Actions Panel -->
-        <div class="compact-panel">
-            <div class="panel-header-compact" style="flex-direction: column; align-items: stretch; gap: 8px;">
-                <div style="display:flex; justify-content: space-between; align-items: center;">
-                    <span style="font-size:12px; color:#94a3b8;">Antrean (Tap utk Hapus):</span>
-                    <span style="font-size:11px; color:#f59e0b; font-weight:bold;">💡 Ketersediaan Bantuan:</span>
+            <div class="compact-panel control-col">
+                
+                <div class="panel-header-compact" style="margin-bottom: 8px;">
+                    <span style="font-size:12px; color:#94a3b8; font-weight:bold;">Antrean (Tap utk Hapus):</span>
                 </div>
-                <div class="bantuan-toggles">
+                
+                <div class="queues-container" id="spawner" style="margin-bottom: 12px;">
+                    <div class="queue-slot empty" data-idx="0">Kosong</div>
+                    <div class="queue-slot empty" data-idx="1">Kosong</div>
+                    <div class="queue-slot empty" data-idx="2">Kosong</div>
+                </div>
+
+                <div class="panel-header-compact" style="margin-bottom: 8px;">
+                    <span style="font-size:12px; color:#f59e0b; font-weight:bold;">💡 Ketersediaan Bantuan:</span>
+                </div>
+
+                <div class="bantuan-toggles" style="margin-bottom: 15px;">
                     <div class="bantuan-item">
                         <label class="switch">
                             <input type="checkbox" id="use-1x1-toggle" checked>
@@ -50,7 +60,7 @@
                             <input type="checkbox" id="use-hammer-toggle" checked>
                             <span class="slider"></span>
                         </label>
-                        <span>Hapus</span>
+                        <span>Palu</span>
                     </div>
                     <div class="bantuan-item">
                         <label class="switch">
@@ -60,45 +70,43 @@
                         <span>Bomb</span>
                     </div>
                 </div>
-            </div>
-            <div class="queues-and-actions">
-                <div class="queues-container" id="spawner">
-                    <div class="queue-slot empty" data-idx="0">1</div>
-                    <div class="queue-slot empty" data-idx="1">2</div>
-                    <div class="queue-slot empty" data-idx="2">3</div>
-                </div>
+
                 <div class="action-buttons-compact">
-                    <button id="calculate-btn" class="btn-compact btn-primary">🧠 AI</button>
-                    <button id="apply-btn" class="btn-compact btn-success" disabled>🚀 GO</button>
+                    <button id="calculate-btn" class="btn-compact btn-primary" style="padding: 10px;">🧠 CARI LANGKAH (AI)</button>
+                    <button id="apply-btn" class="btn-compact btn-success" style="padding: 10px;" disabled>🚀 EKSEKUSI</button>
                 </div>
             </div>
+
         </div>
 
-        <!-- Library Panel -->
-        <div class="compact-panel">
-            <div class="panel-header-compact" style="margin-bottom: 5px;">
-                <span style="font-size:12px; color:#94a3b8;">📚 Koleksi (Tahan/Hold utk Hapus)</span>
-                <div>
-                    <button id="import-lib-btn" class="btn-tiny btn-secondary">📥 Import</button>
-                    <button id="export-lib-btn" class="btn-tiny btn-secondary">📤 Export</button>
-                </div>
+        <div class="right-col">
+            
+            <div class="compact-panel library-panel">
+                <div class="panel-header-compact" style="margin-bottom: 10px;">
+					<span style="font-size:12px; color:#94a3b8; font-weight:bold;">📚 Koleksi Balok</span>
+					<div style="display: flex; gap: 4px;">
+						<button id="add-cat-btn" class="btn-tiny btn-primary">➕ Kategori</button> 
+						<button id="import-lib-btn" class="btn-tiny btn-secondary">📥 Import</button>
+						<button id="export-lib-btn" class="btn-tiny btn-secondary">📤 Export</button>
+					</div>
+				</div>
+                
+                <div id="palette" class="library-grouped-container">
+                    </div>
             </div>
-            <div id="palette" class="palette-container-grid">
-                <!-- Library items injected here -->
-            </div>
-        </div>
 
-        <!-- Collapsible Builder -->
-        <details class="compact-panel details-builder">
-            <summary style="font-size:12px; color:#94a3b8; cursor:pointer;">🛠️ Custom Builder</summary>
-            <div style="margin-top:10px;">
-                <div class="builder-grid" id="builderGrid"></div>
-                <div style="display:flex; gap:5px; margin-top:10px;">
-                    <button id="save-lib-btn" class="btn-compact btn-secondary" style="flex:1;">Simpan</button>
-                    <button id="clear-builder-btn" class="btn-compact btn-danger" style="flex:1;">Reset</button>
+            <details class="compact-panel details-builder">
+                <summary style="font-size:12px; color:#94a3b8; cursor:pointer; font-weight:bold;">🛠️ Custom Builder (Buat Balok Baru)</summary>
+                <div style="margin-top:10px;">
+                    <div class="builder-grid" id="builderGrid"></div>
+                    <div style="display:flex; gap:5px; margin-top:10px;">
+                        <button id="save-lib-btn" class="btn-compact btn-secondary" style="flex:1; padding:8px;">Simpan ke Koleksi</button>
+                        <button id="clear-builder-btn" class="btn-compact btn-danger" style="flex:1; padding:8px;">Bersihkan</button>
+                    </div>
                 </div>
-            </div>
-        </details>
+            </details>
+
+        </div>
 
     </div>
 

@@ -3,6 +3,7 @@ class GameState {
     constructor() {
         this.grid = Array(8).fill().map(() => Array(8).fill(0));
     }
+    
     can_place(block, row, col, grid) {
         if (!grid) grid = this.grid;
         for (let r = 0; r < block.length; r++) {
@@ -15,6 +16,7 @@ class GameState {
         }
         return true;
     }
+    
     place_block(block, row, col, grid) {
         if (!grid) grid = this.grid;
         let new_grid = grid.map(r => [...r]);
@@ -35,6 +37,7 @@ class GameState {
         for (let c of cols_to_clear) for (let r = 0; r < 8; r++) new_grid[r][c] = 0;
         return {new_grid, lines_cleared};
     }
+    
     get_touching_edges(block, row, col, grid) {
         if (!grid) grid = this.grid;
         let edges = 0;
@@ -71,39 +74,49 @@ class AIEngine {
         return count * 10;
     }
     
+    // Optimasi Ekstrem: Menggunakan TypedArray 1D agar GC (Garbage Collector) tidak lag
     getDeadZonesScore(grid) {
         let penalty = 0;
-        let visited = Array(8).fill(0).map(() => Array(8).fill(false));
+        let visited = new Uint8Array(64);
+        let q = new Uint8Array(64); 
         
         for (let r = 0; r < 8; r++) {
             for (let c = 0; c < 8; c++) {
-                if (grid[r][c] === 0 && !visited[r][c]) {
+                let idx = r * 8 + c;
+                if (grid[r][c] === 0 && visited[idx] === 0) {
                     let areaSize = 0;
-                    let queue = [[r, c]];
-                    visited[r][c] = true;
+                    let head = 0, tail = 0;
                     
-                    while (queue.length > 0) {
-                        let [cr, cc] = queue.shift();
+                    q[tail++] = idx;
+                    visited[idx] = 1;
+                    
+                    while (head < tail) {
+                        let curr = q[head++];
                         areaSize++;
                         
-                        let neighbors = [[cr-1, cc], [cr+1, cc], [cr, cc-1], [cr, cc+1]];
-                        for (let [nr, nc] of neighbors) {
-                            if (nr >= 0 && nr < 8 && nc >= 0 && nc < 8 && grid[nr][nc] === 0 && !visited[nr][nc]) {
-                                visited[nr][nc] = true;
-                                queue.push([nr, nc]);
-                            }
+                        let cr = Math.floor(curr / 8);
+                        let cc = curr % 8;
+                        
+                        // Cek 4 tetangga
+                        if (cr > 0 && grid[cr-1][cc] === 0 && visited[(cr-1)*8 + cc] === 0) {
+                            visited[(cr-1)*8 + cc] = 1; q[tail++] = (cr-1)*8 + cc;
+                        }
+                        if (cr < 7 && grid[cr+1][cc] === 0 && visited[(cr+1)*8 + cc] === 0) {
+                            visited[(cr+1)*8 + cc] = 1; q[tail++] = (cr+1)*8 + cc;
+                        }
+                        if (cc > 0 && grid[cr][cc-1] === 0 && visited[cr*8 + (cc-1)] === 0) {
+                            visited[cr*8 + (cc-1)] = 1; q[tail++] = cr*8 + (cc-1);
+                        }
+                        if (cc < 7 && grid[cr][cc+1] === 0 && visited[cr*8 + (cc+1)] === 0) {
+                            visited[cr*8 + (cc+1)] = 1; q[tail++] = cr*8 + (cc+1);
                         }
                     }
-                    // REVISI: NERAKA JAHANAM UNTUK LUBANG KECIL
-                    if (areaSize === 1) {
-                        penalty -= 500000;
-                    } else if (areaSize === 2) {
-                        penalty -= 300000;
-                    } else if (areaSize === 3) {
-                        penalty -= 200000;
-                    } else if (areaSize < 9) {
-                        penalty -= (9 - areaSize) * 20000;
-                    }
+                    
+                    // Hukuman Dead Zones
+                    if (areaSize === 1) penalty -= 500000;
+                    else if (areaSize === 2) penalty -= 300000;
+                    else if (areaSize === 3) penalty -= 200000;
+                    else if (areaSize < 9) penalty -= (9 - areaSize) * 20000;
                 }
             }
         }
@@ -139,6 +152,55 @@ class AIEngine {
         return roughness;
     }
     
+    // FUNGSI BARU: Sentralisasi perhitungan skor papan agar DRY (Don't Repeat Yourself)
+    evaluate_board_survival(grid, initial_score = 0) {
+        let final_score = initial_score;
+        let can3x3 = false, can5x1 = false, can1x5 = false;
+        
+        for (let r = 0; r <= 5; r++) {
+            for (let c = 0; c <= 5; c++) {
+                let ok = true;
+                for (let br = 0; br < 3 && ok; br++) {
+                    for (let bc = 0; bc < 3 && ok; bc++) {
+                        if (grid[r+br][c+bc] !== 0) ok = false;
+                    }
+                }
+                if (ok) { can3x3 = true; break; }
+            }
+            if (can3x3) break;
+        }
+        for (let r = 0; r <= 3; r++) {
+            for (let c = 0; c < 8; c++) {
+                let ok = true;
+                for (let br = 0; br < 5 && ok; br++) {
+                    if (grid[r+br][c] !== 0) ok = false;
+                }
+                if (ok) { can5x1 = true; break; }
+            }
+            if (can5x1) break;
+        }
+        for (let r = 0; r < 8; r++) {
+            for (let c = 0; c <= 3; c++) {
+                let ok = true;
+                for (let bc = 0; bc < 5 && ok; bc++) {
+                    if (grid[r][c+bc] !== 0) ok = false;
+                }
+                if (ok) { can1x5 = true; break; }
+            }
+            if (can1x5) break;
+        }
+        
+        if (!can3x3) final_score -= 500000;
+        if (!can5x1) final_score -= 100000;
+        if (!can1x5) final_score -= 100000;
+        
+        final_score += this.getDeadZonesScore(grid);
+        final_score -= this.getGridRoughness(grid) * 350;
+        final_score += this.countNearCompleteLines(grid) * 10000;
+        
+        return final_score;
+    }
+    
     clearLinesOnGrid(grid) {
         let g = grid.map(r => [...r]);
         let rows_to_clear = [], cols_to_clear = [];
@@ -167,73 +229,24 @@ class AIEngine {
         
         const dfs = (current_grid, remaining_blocks, current_score, path) => {
             if (remaining_blocks.length === 0) {
-                let final_score = current_score;
-                
-                let can3x3 = false, can5x1 = false, can1x5 = false;
-                for (let r = 0; r <= 5; r++) {
-                    for (let c = 0; c <= 5; c++) {
-                        let ok = true;
-                        for (let br = 0; br < 3 && ok; br++) {
-                            for (let bc = 0; bc < 3 && ok; bc++) {
-                                if (current_grid[r+br][c+bc] !== 0) ok = false;
-                            }
-                        }
-                        if (ok) { can3x3 = true; break; }
-                    }
-                    if (can3x3) break;
-                }
-                for (let r = 0; r <= 3; r++) {
-                    for (let c = 0; c < 8; c++) {
-                        let ok = true;
-                        for (let br = 0; br < 5 && ok; br++) {
-                            if (current_grid[r+br][c] !== 0) ok = false;
-                        }
-                        if (ok) { can5x1 = true; break; }
-                    }
-                    if (can5x1) break;
-                }
-                for (let r = 0; r < 8; r++) {
-                    for (let c = 0; c <= 3; c++) {
-                        let ok = true;
-                        for (let bc = 0; bc < 5 && ok; bc++) {
-                            if (current_grid[r][c+bc] !== 0) ok = false;
-                        }
-                        if (ok) { can1x5 = true; break; }
-                    }
-                    if (can1x5) break;
-                }
-                
-                if (!can3x3) final_score -= 500000;
-                if (!can5x1) final_score -= 100000;
-                if (!can1x5) final_score -= 100000;
-                
-                final_score += this.getDeadZonesScore(current_grid);
-                
-                // REVISI: Kembalikan hukuman bergerigi sedikit lebih pedas biar gak ngacak
-                final_score -= this.getGridRoughness(current_grid) * 350;
-                
-                // REVISI: Kurangi sedikit iming-iming jebakan biar dia gak "Pengejar Tiang"
-                final_score += this.countNearCompleteLines(current_grid) * 10000;
-                
-                return { score: final_score, path: path };
+                return { score: this.evaluate_board_survival(current_grid, current_score), path: path };
             }
             
-            let best_future = { score: -9999999, path: path };
+            // Perbaikan Fatal: Dari -9999999 menjadi -Infinity
+            let best_future = { score: -Infinity, path: path };
             let placed_any = false;
             
             for (let i = 0; i < remaining_blocks.length; i++) {
                 let item = remaining_blocks[i];
                 
-                for (let r = 0; r < 8; r++) {
-                    for (let c = 0; c < 8; c++) {
+                // Perbaikan Looping: Dibatasi agar tidak buang resource ngecek dinding out-of-bounds
+                for (let r = 0; r <= 8 - item.block.length; r++) {
+                    for (let c = 0; c <= 8 - item.block[0].length; c++) {
                         if (state.can_place(item.block, r, c, current_grid)) {
                             placed_any = true;
                             let {new_grid, lines_cleared} = state.place_block(item.block, r, c, current_grid);
-                            
                             let touching_edges = state.get_touching_edges(item.block, r, c, current_grid);
                             
-                            // REVISI: Bonus Nempel Dinaikkan 3x Lipat (Jadi 1500)
-                            // Kalau AI gak bisa hancurin baris, dia dipaksa naruh se-mepet mungkin!
                             let step_score = (lines_cleared * 75000) + (touching_edges * 1500);
                             
                             let max_outer_edges = 0;
@@ -279,20 +292,7 @@ class AIEngine {
         
         const simulate_all_placements = (grid, blocks, current_score = 0) => {
             if (blocks.length === 0) {
-                let final_score = current_score;
-                let can3x3 = false, can5x1 = false, can1x5 = false;
-                for (let r = 0; r <= 5; r++) { for (let c = 0; c <= 5; c++) { let ok = true; for (let br = 0; br < 3 && ok; br++) { for (let bc = 0; bc < 3 && ok; bc++) { if (grid[r+br][c+bc] !== 0) ok = false; } } if (ok) { can3x3 = true; break; } } if (can3x3) break; }
-                for (let r = 0; r <= 3; r++) { for (let c = 0; c < 8; c++) { let ok = true; for (let br = 0; br < 5 && ok; br++) { if (grid[r+br][c] !== 0) ok = false; } if (ok) { can5x1 = true; break; } } if (can5x1) break; }
-                for (let r = 0; r < 8; r++) { for (let c = 0; c <= 3; c++) { let ok = true; for (let bc = 0; bc < 5 && ok; bc++) { if (grid[r][c+bc] !== 0) ok = false; } if (ok) { can1x5 = true; break; } } if (can1x5) break; }
-                if (!can3x3) final_score -= 500000;
-                if (!can5x1) final_score -= 100000;
-                if (!can1x5) final_score -= 100000;
-                
-                final_score += this.getDeadZonesScore(grid);
-                final_score -= this.getGridRoughness(grid) * 350;
-                final_score += this.countNearCompleteLines(grid) * 10000;
-                
-                return final_score;
+                return this.evaluate_board_survival(grid, current_score);
             }
             
             let best_score = null;
@@ -304,7 +304,6 @@ class AIEngine {
                             let {new_grid, lines_cleared} = state.place_block(block, r, c, grid);
                             let touching_edges = state.get_touching_edges(block, r, c, grid);
                             
-                            // Samakan dengan otak utama
                             let step_score = (lines_cleared * 75000) + (touching_edges * 1500);
                             
                             let max_outer_edges = 0;

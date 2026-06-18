@@ -59,14 +59,14 @@ class GameState {
 }
 
 // ==========================================
-// AI ENGINE (OPTIMIZED)
+// AI ENGINE (3 BRAIN MODES)
 // ==========================================
 class AIEngine {
+    // Shared: block difficulty
     getBlockDifficulty(block) {
         let rows = block.length;
         let cols = block[0].length;
         let count = block.flat().reduce((s, v) => s + v, 0);
-        
         if (rows === 3 && cols === 3 && count === 9) return 100;
         if (count === 5 && (rows === 1 || cols === 1)) return 90;
         if (rows === 3 && cols === 3 && count === 5) return 85;
@@ -78,43 +78,29 @@ class AIEngine {
         if (count === 1) return 5;
         return count * 10;
     }
-    
+
+    // Shared: dead zones (isolated small empty pockets)
     getDeadZonesScore(grid) {
         let penalty = 0;
         let visited = new Uint8Array(64);
-        let q = new Uint8Array(64); 
-        
+        let q = new Uint8Array(64);
         for (let r = 0; r < 8; r++) {
             for (let c = 0; c < 8; c++) {
                 let idx = r * 8 + c;
                 if (grid[r][c] === 0 && visited[idx] === 0) {
                     let areaSize = 0;
                     let head = 0, tail = 0;
-                    
                     q[tail++] = idx;
                     visited[idx] = 1;
-                    
                     while (head < tail) {
                         let curr = q[head++];
                         areaSize++;
-                        
-                        let cr = Math.floor(curr / 8);
-                        let cc = curr % 8;
-                        
-                        if (cr > 0 && grid[cr-1][cc] === 0 && visited[(cr-1)*8 + cc] === 0) {
-                            visited[(cr-1)*8 + cc] = 1; q[tail++] = (cr-1)*8 + cc;
-                        }
-                        if (cr < 7 && grid[cr+1][cc] === 0 && visited[(cr+1)*8 + cc] === 0) {
-                            visited[(cr+1)*8 + cc] = 1; q[tail++] = (cr+1)*8 + cc;
-                        }
-                        if (cc > 0 && grid[cr][cc-1] === 0 && visited[cr*8 + (cc-1)] === 0) {
-                            visited[cr*8 + (cc-1)] = 1; q[tail++] = cr*8 + (cc-1);
-                        }
-                        if (cc < 7 && grid[cr][cc+1] === 0 && visited[cr*8 + (cc+1)] === 0) {
-                            visited[cr*8 + (cc+1)] = 1; q[tail++] = cr*8 + (cc+1);
-                        }
+                        let cr = Math.floor(curr / 8), cc = curr % 8;
+                        if (cr > 0 && grid[cr-1][cc] === 0 && visited[(cr-1)*8+cc] === 0) { visited[(cr-1)*8+cc] = 1; q[tail++] = (cr-1)*8+cc; }
+                        if (cr < 7 && grid[cr+1][cc] === 0 && visited[(cr+1)*8+cc] === 0) { visited[(cr+1)*8+cc] = 1; q[tail++] = (cr+1)*8+cc; }
+                        if (cc > 0 && grid[cr][cc-1] === 0 && visited[cr*8+(cc-1)] === 0) { visited[cr*8+(cc-1)] = 1; q[tail++] = cr*8+(cc-1); }
+                        if (cc < 7 && grid[cr][cc+1] === 0 && visited[cr*8+(cc+1)] === 0) { visited[cr*8+(cc+1)] = 1; q[tail++] = cr*8+(cc+1); }
                     }
-                    
                     if (areaSize === 1) penalty -= 500000;
                     else if (areaSize === 2) penalty -= 300000;
                     else if (areaSize === 3) penalty -= 200000;
@@ -125,83 +111,282 @@ class AIEngine {
         return penalty;
     }
 
+    // Shared: near-complete lines
     countNearCompleteLines(grid) {
         let count = 0;
         for (let r = 0; r < 8; r++) {
             let filled = grid[r].filter(v => v === 1).length;
-            if (filled === 7) count++;
+            if (filled >= 6) count++;
         }
         for (let c = 0; c < 8; c++) {
             let filled = 0;
             for (let r = 0; r < 8; r++) if (grid[r][c] === 1) filled++;
-            if (filled === 7) count++;
+            if (filled >= 6) count++;
         }
         return count;
     }
-    
+
+    // Shared: grid roughness
     getGridRoughness(grid) {
         let roughness = 0;
-        for (let r = 0; r < 8; r++) {
-            for (let c = 0; c < 7; c++) {
-                if (grid[r][c] !== grid[r][c+1]) roughness++;
-            }
-        }
-        for (let c = 0; c < 8; c++) {
-            for (let r = 0; r < 7; r++) {
-                if (grid[r][c] !== grid[r+1][c]) roughness++;
-            }
-        }
+        for (let r = 0; r < 8; r++) for (let c = 0; c < 7; c++) if (grid[r][c] !== grid[r][c+1]) roughness++;
+        for (let c = 0; c < 8; c++) for (let r = 0; r < 7; r++) if (grid[r][c] !== grid[r+1][c]) roughness++;
         return roughness;
     }
-    
-    evaluate_board_survival(grid, initial_score = 0) {
-        let final_score = initial_score;
+
+    // Shared: can fit big blocks?
+    canFitBlocks(grid) {
         let can3x3 = false, can5x1 = false, can1x5 = false;
-        
-        for (let r = 0; r <= 5; r++) {
-            for (let c = 0; c <= 5; c++) {
-                let ok = true;
-                for (let br = 0; br < 3 && ok; br++) {
-                    for (let bc = 0; bc < 3 && ok; bc++) {
-                        if (grid[r+br][c+bc] !== 0) ok = false;
+        for (let r = 0; r <= 5 && !can3x3; r++) for (let c = 0; c <= 5 && !can3x3; c++) {
+            let ok = true;
+            for (let br = 0; br < 3 && ok; br++) for (let bc = 0; bc < 3 && ok; bc++) if (grid[r+br][c+bc] !== 0) ok = false;
+            if (ok) can3x3 = true;
+        }
+        for (let r = 0; r <= 3 && !can5x1; r++) for (let c = 0; c < 8 && !can5x1; c++) {
+            let ok = true;
+            for (let br = 0; br < 5 && ok; br++) if (grid[r+br][c] !== 0) ok = false;
+            if (ok) can5x1 = true;
+        }
+        for (let r = 0; r < 8 && !can1x5; r++) for (let c = 0; c <= 3 && !can1x5; c++) {
+            let ok = true;
+            for (let bc = 0; bc < 5 && ok; bc++) if (grid[r][c+bc] !== 0) ok = false;
+            if (ok) can1x5 = true;
+        }
+        return { can3x3, can5x1, can1x5 };
+    }
+
+    // ========== BRAIN 1: EDGE HUGGER (Tepi) ==========
+    // Strategy: Keep center clean, hug the walls
+    evaluate_brain1(grid, initial_score = 0) {
+        let score = initial_score;
+        let fit = this.canFitBlocks(grid);
+        if (!fit.can3x3) score -= 500000;
+        if (!fit.can5x1) score -= 100000;
+        if (!fit.can1x5) score -= 100000;
+        score += this.getDeadZonesScore(grid);
+        score -= this.getGridRoughness(grid) * 350;
+        score += this.countNearCompleteLines(grid) * 10000;
+
+        // Center penalty: cells in 4x4 center get heavy penalty
+        let centerPenalty = 0;
+        for (let r = 2; r <= 5; r++) {
+            for (let c = 2; c <= 5; c++) {
+                if (grid[r][c] === 1) centerPenalty += 8000;
+            }
+        }
+        score -= centerPenalty;
+
+        // Edge bonus: filled cells near walls get bonus
+        let edgeBonus = 0;
+        for (let r = 0; r < 8; r++) {
+            for (let c = 0; c < 8; c++) {
+                if (grid[r][c] === 1) {
+                    if (r === 0 || r === 7) edgeBonus += 3000;
+                    if (c === 0 || c === 7) edgeBonus += 3000;
+                }
+            }
+        }
+        score += edgeBonus;
+        return score;
+    }
+
+    // Step score for Brain 1
+    stepScore_brain1(lines_cleared, touching_edges, max_outer_edges, block, row, col) {
+        let s = (lines_cleared * 75000) + (touching_edges * 1500);
+        if (touching_edges >= (max_outer_edges * 0.8)) s += 25000;
+        // Prefer edge positions
+        let centerDist = 0;
+        for (let br = 0; br < block.length; br++) {
+            for (let bc = 0; bc < block[0].length; bc++) {
+                if (block[br][bc] === 1) {
+                    let cr = row + br, cc = col + bc;
+                    centerDist += Math.abs(cr - 3.5) + Math.abs(cc - 3.5);
+                }
+            }
+        }
+        s += centerDist * 1200;
+        return s;
+    }
+
+    // ========== BRAIN 2: LINE HUNTER (Garis) ==========
+    // Strategy: Aggressively fill rows/columns, maximize line clears
+    evaluate_brain2(grid, initial_score = 0) {
+        let score = initial_score;
+        let fit = this.canFitBlocks(grid);
+        if (!fit.can3x3) score -= 500000;
+        if (!fit.can5x1) score -= 100000;
+        if (!fit.can1x5) score -= 100000;
+        score += this.getDeadZonesScore(grid);
+        // Less roughness penalty — we WANT to fill aggressively
+        score -= this.getGridRoughness(grid) * 150;
+
+        // Heavily reward near-complete lines
+        let nearLines = 0;
+        let rowFills = [];
+        for (let r = 0; r < 8; r++) {
+            let filled = grid[r].filter(v => v === 1).length;
+            rowFills.push(filled);
+            if (filled >= 6) nearLines++;
+            if (filled >= 7) nearLines += 2; // Extra reward for 7/8
+        }
+        let colFills = [];
+        for (let c = 0; c < 8; c++) {
+            let filled = 0;
+            for (let r = 0; r < 8; r++) if (grid[r][c] === 1) filled++;
+            colFills.push(filled);
+            if (filled >= 6) nearLines++;
+            if (filled >= 7) nearLines += 2;
+        }
+        score += nearLines * 20000;
+
+        // Reward focusing on fewer lines (concentrate filling)
+        let focusedRows = rowFills.filter(f => f >= 4).length;
+        let emptyRows = rowFills.filter(f => f === 0).length;
+        score += focusedRows * 5000;
+        score += emptyRows * 3000; // Keep some rows completely empty
+
+        let focusedCols = colFills.filter(f => f >= 4).length;
+        let emptyCols = colFills.filter(f => f === 0).length;
+        score += focusedCols * 5000;
+        score += emptyCols * 3000;
+
+        return score;
+    }
+
+    // Step score for Brain 2
+    stepScore_brain2(lines_cleared, touching_edges, max_outer_edges, block, row, col, grid) {
+        let s = (lines_cleared * 120000) + (touching_edges * 800);
+        if (touching_edges >= (max_outer_edges * 0.8)) s += 25000;
+        // Bonus for adding to rows/cols that are already partially filled
+        let rowFillBefore = 0, colFillBefore = 0;
+        for (let br = 0; br < block.length; br++) {
+            for (let bc = 0; bc < block[0].length; bc++) {
+                if (block[br][bc] === 1) {
+                    let cr = row + br, cc = col + bc;
+                    rowFillBefore += grid[cr].filter(v => v === 1).length;
+                    let cf = 0; for (let r = 0; r < 8; r++) if (grid[r][cc] === 1) cf++;
+                    colFillBefore += cf;
+                }
+            }
+        }
+        s += (rowFillBefore + colFillBefore) * 400;
+        return s;
+    }
+
+    // ========== BRAIN 3: SPACE BALANCER (Sebar) ==========
+    // Strategy: Spread evenly, maximize connected open space
+    evaluate_brain3(grid, initial_score = 0) {
+        let score = initial_score;
+        let fit = this.canFitBlocks(grid);
+        if (!fit.can3x3) score -= 500000;
+        if (!fit.can5x1) score -= 100000;
+        if (!fit.can1x5) score -= 100000;
+        score += this.getDeadZonesScore(grid) * 1.5; // Even more strict on dead zones
+
+        // Find largest connected empty region
+        let visited = new Uint8Array(64);
+        let q = new Uint8Array(64);
+        let maxRegion = 0;
+        let totalEmpty = 0;
+        for (let r = 0; r < 8; r++) {
+            for (let c = 0; c < 8; c++) {
+                let idx = r * 8 + c;
+                if (grid[r][c] === 0) {
+                    totalEmpty++;
+                    if (visited[idx] === 0) {
+                        let regionSize = 0;
+                        let head = 0, tail = 0;
+                        q[tail++] = idx; visited[idx] = 1;
+                        while (head < tail) {
+                            let curr = q[head++]; regionSize++;
+                            let cr = Math.floor(curr/8), cc = curr%8;
+                            if (cr > 0 && grid[cr-1][cc] === 0 && visited[(cr-1)*8+cc] === 0) { visited[(cr-1)*8+cc]=1; q[tail++]=(cr-1)*8+cc; }
+                            if (cr < 7 && grid[cr+1][cc] === 0 && visited[(cr+1)*8+cc] === 0) { visited[(cr+1)*8+cc]=1; q[tail++]=(cr+1)*8+cc; }
+                            if (cc > 0 && grid[cr][cc-1] === 0 && visited[cr*8+(cc-1)] === 0) { visited[cr*8+(cc-1)]=1; q[tail++]=cr*8+(cc-1); }
+                            if (cc < 7 && grid[cr][cc+1] === 0 && visited[cr*8+(cc+1)] === 0) { visited[cr*8+(cc+1)]=1; q[tail++]=cr*8+(cc+1); }
+                        }
+                        if (regionSize > maxRegion) maxRegion = regionSize;
                     }
                 }
-                if (ok) { can3x3 = true; break; }
             }
-            if (can3x3) break;
         }
-        for (let r = 0; r <= 3; r++) {
-            for (let c = 0; c < 8; c++) {
-                let ok = true;
-                for (let br = 0; br < 5 && ok; br++) {
-                    if (grid[r+br][c] !== 0) ok = false;
-                }
-                if (ok) { can5x1 = true; break; }
-            }
-            if (can5x1) break;
+        // Reward having one big connected open space
+        score += maxRegion * 15000;
+        // Penalize fragmentation: if maxRegion < totalEmpty * 0.6, bad
+        if (totalEmpty > 0 && maxRegion < totalEmpty * 0.6) {
+            score -= (totalEmpty * 0.6 - maxRegion) * 25000;
         }
+
+        // Even distribution: penalize quadrant imbalance
+        let quadrants = [0, 0, 0, 0];
         for (let r = 0; r < 8; r++) {
-            for (let c = 0; c <= 3; c++) {
-                let ok = true;
-                for (let bc = 0; bc < 5 && ok; bc++) {
-                    if (grid[r][c+bc] !== 0) ok = false;
+            for (let c = 0; c < 8; c++) {
+                if (grid[r][c] === 1) {
+                    let qi = (r < 4 ? 0 : 2) + (c < 4 ? 0 : 1);
+                    quadrants[qi]++;
                 }
-                if (ok) { can1x5 = true; break; }
             }
-            if (can1x5) break;
         }
-        
-        if (!can3x3) final_score -= 500000;
-        if (!can5x1) final_score -= 100000;
-        if (!can1x5) final_score -= 100000;
-        
-        final_score += this.getDeadZonesScore(grid);
-        final_score -= this.getGridRoughness(grid) * 350;
-        final_score += this.countNearCompleteLines(grid) * 10000;
-        
-        return final_score;
+        let avgQ = quadrants.reduce((a, b) => a + b, 0) / 4;
+        let imbalance = quadrants.reduce((s, q) => s + Math.abs(q - avgQ), 0);
+        score -= imbalance * 4000;
+
+        score -= this.getGridRoughness(grid) * 250;
+        score += this.countNearCompleteLines(grid) * 8000;
+        return score;
     }
-    
+
+    // Step score for Brain 3
+    stepScore_brain3(lines_cleared, touching_edges, max_outer_edges, block, row, col, grid) {
+        let s = (lines_cleared * 75000) + (touching_edges * 1000);
+        if (touching_edges >= (max_outer_edges * 0.8)) s += 25000;
+        let neighborCount = 0;
+        for (let br = 0; br < block.length; br++) {
+            for (let bc = 0; bc < block[0].length; bc++) {
+                if (block[br][bc] === 1) {
+                    let cr = row + br, cc = col + bc;
+                    if (cr > 0 && grid[cr-1][cc] === 1) neighborCount++;
+                    if (cr < 7 && grid[cr+1][cc] === 1) neighborCount++;
+                    if (cc > 0 && grid[cr][cc-1] === 1) neighborCount++;
+                    if (cc < 7 && grid[cr][cc+1] === 1) neighborCount++;
+                }
+            }
+        }
+        s += neighborCount * 2000;
+        return s;
+    }
+
+    // ========== BRAIN 4: ADAPTIVE (Auto) ==========
+    // Strategy: Switch strategy based on board fill %
+    // <40% = Garis (agresif), 40-65% = Sebar (seimbang), >65% = Tepi (defensif)
+    getBoardFillPercent(grid) {
+        let filled = 0;
+        for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) if (grid[r][c] === 1) filled++;
+        return filled / 64 * 100;
+    }
+
+    getAdaptiveSubMode(grid) {
+        let fill = this.getBoardFillPercent(grid);
+        if (fill < 40) return 2;       // Garis — board masih lega, gas clear line
+        if (fill <= 65) return 3;       // Sebar — mulai rame, jaga keseimbangan
+        return 1;                        // Tepi — penuh, defensif jaga tengah
+    }
+
+    evaluate_brain4(grid, initial_score = 0) {
+        let subMode = this.getAdaptiveSubMode(grid);
+        if (subMode === 2) return this.evaluate_brain2(grid, initial_score);
+        if (subMode === 3) return this.evaluate_brain3(grid, initial_score);
+        return this.evaluate_brain1(grid, initial_score);
+    }
+
+    stepScore_brain4(lines_cleared, touching_edges, max_outer_edges, block, row, col, grid) {
+        let subMode = this.getAdaptiveSubMode(grid);
+        if (subMode === 2) return this.stepScore_brain2(lines_cleared, touching_edges, max_outer_edges, block, row, col, grid);
+        if (subMode === 3) return this.stepScore_brain3(lines_cleared, touching_edges, max_outer_edges, block, row, col, grid);
+        return this.stepScore_brain1(lines_cleared, touching_edges, max_outer_edges, block, row, col);
+    }
+
+    // ========== SHARED: clear lines on a grid ==========
     clearLinesOnGrid(grid) {
         let g = grid.map(r => [...r]);
         let rows_to_clear = [], cols_to_clear = [];
@@ -216,8 +401,9 @@ class AIEngine {
         for (let c of cols_to_clear) for (let r = 0; r < 8; r++) g[r][c] = 0;
         return { grid: g, count };
     }
-    
-    find_best_move(state, available_blocks) {
+
+    // ========== SHARED: find_best_move with brain mode ==========
+    find_best_move(state, available_blocks, brainMode = 1) {
         let valid_blocks = [];
         for (let i = 0; i < available_blocks.length; i++) {
             if (available_blocks[i] && available_blocks[i].length > 0) {
@@ -225,29 +411,35 @@ class AIEngine {
             }
         }
         if (valid_blocks.length === 0) return null;
-        
+
         valid_blocks.sort((a, b) => this.getBlockDifficulty(b.block) - this.getBlockDifficulty(a.block));
-        
+
+        const evalFn = brainMode === 1 ? (g, s) => this.evaluate_brain1(g, s)
+                     : brainMode === 2 ? (g, s) => this.evaluate_brain2(g, s)
+                     : brainMode === 3 ? (g, s) => this.evaluate_brain3(g, s)
+                     : (g, s) => this.evaluate_brain4(g, s);
+
+        const stepFn = brainMode === 1 ? (lc, te, moe, b, r, c, g) => this.stepScore_brain1(lc, te, moe, b, r, c)
+                     : brainMode === 2 ? (lc, te, moe, b, r, c, g) => this.stepScore_brain2(lc, te, moe, b, r, c, g)
+                     : brainMode === 3 ? (lc, te, moe, b, r, c, g) => this.stepScore_brain3(lc, te, moe, b, r, c, g)
+                     : (lc, te, moe, b, r, c, g) => this.stepScore_brain4(lc, te, moe, b, r, c, g);
+
         const dfs = (current_grid, remaining_blocks, current_score, path) => {
             if (remaining_blocks.length === 0) {
-                return { score: this.evaluate_board_survival(current_grid, current_score), path: path };
+                return { score: evalFn(current_grid, current_score), path: path };
             }
-            
             let best_future = { score: -Infinity, path: path };
             let placed_any = false;
-            
+
             for (let i = 0; i < remaining_blocks.length; i++) {
                 let item = remaining_blocks[i];
-                
                 for (let r = 0; r <= 8 - item.block.length; r++) {
                     for (let c = 0; c <= 8 - item.block[0].length; c++) {
                         if (state.can_place(item.block, r, c, current_grid)) {
                             placed_any = true;
                             let {new_grid, lines_cleared} = state.place_block(item.block, r, c, current_grid);
                             let touching_edges = state.get_touching_edges(item.block, r, c, current_grid);
-                            
-                            let step_score = (lines_cleared * 75000) + (touching_edges * 1500);
-                            
+
                             let max_outer_edges = 0;
                             for (let br = 0; br < item.block.length; br++) {
                                 for (let bc = 0; bc < item.block[0].length; bc++) {
@@ -259,39 +451,43 @@ class AIEngine {
                                     }
                                 }
                             }
-                            if (touching_edges >= (max_outer_edges * 0.8)) {
-                                step_score += 25000;
-                            }
-                            
+
+                            let step_score = stepFn(lines_cleared, touching_edges, max_outer_edges, item.block, r, c, current_grid);
+
                             let next_remaining = remaining_blocks.filter((_, index) => index !== i);
                             let current_step = { row: r, col: c, block_idx: item.idx, block: item.block, resulting_grid: new_grid };
                             let future = dfs(new_grid, next_remaining, current_score + step_score, [...path, current_step]);
-                            
+
                             if (future.score > best_future.score) best_future = future;
                         }
                     }
                 }
             }
-            
+
             if (!placed_any) {
                 return { score: current_score - 90000000 - (remaining_blocks.length * 1000000), path: path };
             }
-            
             return best_future;
         };
-        
+
         let result = dfs(state.grid, valid_blocks, 0, []);
         if (result.path && result.path.length > 0) return result;
         return null;
     }
 
-    tryItems(currentGrid, validBlocks, availabilities) {
+    // ========== tryItems (shared, uses brain mode for eval) ==========
+    tryItems(currentGrid, validBlocks, availabilities, brainMode = 1) {
         let best_item = null;
         let max_item_score = -Infinity;
         
+        const evalBoard = (g, s) => brainMode === 1 ? this.evaluate_brain1(g, s)
+            : brainMode === 2 ? this.evaluate_brain2(g, s)
+            : brainMode === 3 ? this.evaluate_brain3(g, s)
+            : this.evaluate_brain4(g, s);
+        
         const simulate_all_placements = (grid, blocks, current_score = 0) => {
             if (blocks.length === 0) {
-                return this.evaluate_board_survival(grid, current_score);
+                return evalBoard(grid, current_score);
             }
             
             let best_score = null;
@@ -418,6 +614,17 @@ const ai = new AIEngine();
 let spawnerQueues = [null, null, null];
 let currentRecommendation = null;
 let itemRecommendation = null;
+let currentBrainMode = 1;
+
+// Brain mode switcher
+document.querySelectorAll('.brain-btn').forEach(btn => {
+    btn.onclick = () => {
+        document.querySelectorAll('.brain-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        currentBrainMode = parseInt(btn.dataset.mode);
+        clearRecommendation();
+    };
+});
 
 // Kategori Permanen (Dikunci, Data dari Output Final)
 const permanentCategories = {
@@ -485,6 +692,7 @@ function renderLibrary() {
                 divItem.appendChild(createMiniGrid(shape));
                 // Aksi sentuh: Masuk ke spawner
                 divItem.onclick = () => addToSpawner(shape);
+                divItem.addEventListener('touchend', (e) => { e.preventDefault(); addToSpawner(shape); });
                 gridWrapper.appendChild(divItem);
             });
             pal.appendChild(gridWrapper);
@@ -507,6 +715,7 @@ function renderLibrary() {
             divItem.className = 'p-item';
             divItem.appendChild(createMiniGrid(shape));
             divItem.onclick = () => addToSpawner(shape);
+            divItem.addEventListener('touchend', (e) => { e.preventDefault(); addToSpawner(shape); });
             
             // Khusus custom block: bisa dihapus
             divItem.oncontextmenu = (e) => {
@@ -760,13 +969,22 @@ document.getElementById('calculate-btn').onclick = () => {
         return;
     }
     
-    let result = ai.find_best_move(state, spawnerQueues);
+    let brainLabel;
+    if (currentBrainMode === 4) {
+        let sub = ai.getAdaptiveSubMode(state.grid);
+        let subName = sub === 2 ? "Garis" : sub === 3 ? "Sebar" : "Tepi";
+        let fillPct = Math.round(ai.getBoardFillPercent(state.grid));
+        brainLabel = `Auto\u2192${subName} (${fillPct}%)`;
+    } else {
+        brainLabel = currentBrainMode === 1 ? "Tepi" : currentBrainMode === 2 ? "Garis" : "Sebar";
+    }
+    let result = ai.find_best_move(state, spawnerQueues, currentBrainMode);
     let isKiamat = result && result.score < -500000;
     let allPlaced = result && result.path && result.path.length === validBlocks.length;
     
     if (allPlaced) {
         currentRecommendation = result.path;
-        document.getElementById('ai-status').textContent = `Berhasil! (Skor: ${result.score})`;
+        document.getElementById('ai-status').textContent = `[${brainLabel}] Berhasil! (Skor: ${result.score})`;
         if (isKiamat) document.getElementById('ai-status').textContent += " ⚠️ AWAS KIAMAT!";
         document.getElementById('ai-status').className = "status-badge" + (isKiamat ? " alert" : "");
         document.getElementById('apply-btn').disabled = false;
@@ -786,7 +1004,7 @@ document.getElementById('calculate-btn').onclick = () => {
             document.getElementById('ai-status').className = "status-badge alert";
             
             setTimeout(() => {
-                let itemRec = ai.tryItems(state.grid, validBlocks, availabilities);
+                let itemRec = ai.tryItems(state.grid, validBlocks, availabilities, currentBrainMode);
                 if (itemRec) {
                     itemRecommendation = itemRec;
                     

@@ -143,6 +143,7 @@ body {
     display: flex; align-items: center; justify-content: center;
     color: #475569; font-size: 11px; font-weight: bold; position: relative;
     cursor: pointer;
+    touch-action: manipulation;
 }
 .queue-slot:active { transform: scale(0.95); }
 .queue-slot.item-trash { border: 2px solid var(--danger); animation: blink 0.5s infinite; }
@@ -183,6 +184,8 @@ body {
     display: flex; align-items: center; justify-content: center;
     cursor: pointer; 
     transition: transform 0.1s;
+    touch-action: manipulation;
+    -webkit-touch-callout: none;
 }
 .p-item:active { transform: scale(0.9); border-color: var(--accent); }
 
@@ -230,3 +233,18 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 .slider:before { position: absolute; content: ""; height: 14px; width: 14px; left: 3px; bottom: 3px; background-color: white; transition: .3s; border-radius: 50%; box-shadow: 0 2px 4px rgba(0,0,0,0.3); }
 input:checked + .slider { background-color: var(--success); }
 input:checked + .slider:before { transform: translateX(14px); }
+
+/* Brain Mode Selector */
+.brain-mode-selector { display: flex; gap: 6px; }
+.brain-btn {
+    flex: 1; padding: 8px 2px; font-size: 10px; font-weight: bold;
+    border: 2px solid #475569; border-radius: 8px;
+    background: #0f172a; color: #94a3b8; cursor: pointer;
+    transition: all 0.15s;
+    touch-action: manipulation;
+}
+.brain-btn.active {
+    border-color: #c084fc; color: #fff; background: #2e1065;
+    box-shadow: 0 0 10px rgba(192, 132, 252, 0.3);
+}
+.brain-btn:active { transform: scale(0.95); }

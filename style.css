@@ -171,31 +171,16 @@ body {
     font-size: 11px; color: #38bdf8; text-transform: uppercase;
     letter-spacing: 1px; font-weight: bold; margin-bottom: 6px;
     border-bottom: 1px solid #334155; padding-bottom: 4px;
-    cursor: pointer; display: flex; justify-content: space-between;
-    transition: all 0.2s;
-}
-.lib-category-title:hover { color: #fff; border-color: #38bdf8; }
-.lib-category-title::after { content: "✏️"; font-size: 10px; opacity: 0.5; }
-.lib-category-title:hover::after { opacity: 1; }
-
-.palette-container-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(36px, 1fr));
-    gap: 6px;
-    min-height: 45px; /* Supaya kategori kosong tetap punya ruang buat di-drop */
-    border-radius: 6px;
-    padding: 2px;
 }
 
 .p-item {
     width: 100%; aspect-ratio: 1/1; background: #0f172a;
     border: 1px solid #334155; border-radius: 6px;
     display: flex; align-items: center; justify-content: center;
-    cursor: grab; /* Kursor jadi tangan */
-    -webkit-user-drag: element; /* KUNCI RAHASIA UNTUK SAFARI iPAD */
+    cursor: pointer; /* Kembali normal */
     transition: transform 0.1s;
 }
-.p-item:active { cursor: grabbing; transform: scale(0.9); border-color: var(--accent); }
+.p-item:active { transform: scale(0.9); border-color: var(--accent); }
 
 /* Mini Grid */
 .mini-grid { display: grid; gap: 2px; }

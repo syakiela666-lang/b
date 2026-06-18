@@ -94,8 +94,15 @@ class AIEngine {
                             }
                         }
                     }
-                    if (areaSize < 9) {
-                        penalty -= (9 - areaSize) * 15000;
+                    // REVISI: NERAKA JAHANAM UNTUK LUBANG KECIL
+                    if (areaSize === 1) {
+                        penalty -= 500000;
+                    } else if (areaSize === 2) {
+                        penalty -= 300000;
+                    } else if (areaSize === 3) {
+                        penalty -= 200000;
+                    } else if (areaSize < 9) {
+                        penalty -= (9 - areaSize) * 20000;
                     }
                 }
             }
@@ -202,11 +209,11 @@ class AIEngine {
                 
                 final_score += this.getDeadZonesScore(current_grid);
                 
-                // UPDATE: Kurangi OCD Kerapian biar AI mau berkorban bentuk
-                final_score -= this.getGridRoughness(current_grid) * 200;
+                // REVISI: Kembalikan hukuman bergerigi sedikit lebih pedas biar gak ngacak
+                final_score -= this.getGridRoughness(current_grid) * 350;
                 
-                // UPDATE: Naikkan gila-gilaan iming-iming jebakan baris (Near Clear)
-                final_score += this.countNearCompleteLines(current_grid) * 15000;
+                // REVISI: Kurangi sedikit iming-iming jebakan biar dia gak "Pengejar Tiang"
+                final_score += this.countNearCompleteLines(current_grid) * 10000;
                 
                 return { score: final_score, path: path };
             }
@@ -225,8 +232,9 @@ class AIEngine {
                             
                             let touching_edges = state.get_touching_edges(item.block, r, c, current_grid);
                             
-                            // UPDATE: Naikkan gaji tukang sapu (Clear Line Reward) jadi 75.000
-                            let step_score = (lines_cleared * 75000) + (touching_edges * 500);
+                            // REVISI: Bonus Nempel Dinaikkan 3x Lipat (Jadi 1500)
+                            // Kalau AI gak bisa hancurin baris, dia dipaksa naruh se-mepet mungkin!
+                            let step_score = (lines_cleared * 75000) + (touching_edges * 1500);
                             
                             let max_outer_edges = 0;
                             for (let br = 0; br < item.block.length; br++) {
@@ -281,10 +289,8 @@ class AIEngine {
                 if (!can1x5) final_score -= 100000;
                 
                 final_score += this.getDeadZonesScore(grid);
-                
-                // UPDATE OTAK DARURAT: Samakan dengan otak utama
-                final_score -= this.getGridRoughness(grid) * 200;
-                final_score += this.countNearCompleteLines(grid) * 15000;
+                final_score -= this.getGridRoughness(grid) * 350;
+                final_score += this.countNearCompleteLines(grid) * 10000;
                 
                 return final_score;
             }
@@ -298,8 +304,8 @@ class AIEngine {
                             let {new_grid, lines_cleared} = state.place_block(block, r, c, grid);
                             let touching_edges = state.get_touching_edges(block, r, c, grid);
                             
-                            // UPDATE OTAK DARURAT: Samakan skor Clear Line (75.000)
-                            let step_score = (lines_cleared * 75000) + (touching_edges * 500);
+                            // Samakan dengan otak utama
+                            let step_score = (lines_cleared * 75000) + (touching_edges * 1500);
                             
                             let max_outer_edges = 0;
                             for (let br = 0; br < block.length; br++) {
@@ -406,7 +412,7 @@ class AIEngine {
     }
 }
 
-// UI State & Logic (Tidak ada yang diubah, tetap aman)
+// UI State & Logic
 const state = new GameState();
 const ai = new AIEngine();
 let spawnerQueues = [null, null, null];

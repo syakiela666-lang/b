@@ -1,4 +1,6 @@
-// AI Engine Ported to JS
+// ==========================================
+// GAME STATE & MECHANICS
+// ==========================================
 class GameState {
     constructor() {
         this.grid = Array(8).fill().map(() => Array(8).fill(0));
@@ -56,6 +58,9 @@ class GameState {
     }
 }
 
+// ==========================================
+// AI ENGINE (OPTIMIZED)
+// ==========================================
 class AIEngine {
     getBlockDifficulty(block) {
         let rows = block.length;
@@ -74,7 +79,6 @@ class AIEngine {
         return count * 10;
     }
     
-    // Optimasi Ekstrem: Menggunakan TypedArray 1D agar GC (Garbage Collector) tidak lag
     getDeadZonesScore(grid) {
         let penalty = 0;
         let visited = new Uint8Array(64);
@@ -97,7 +101,6 @@ class AIEngine {
                         let cr = Math.floor(curr / 8);
                         let cc = curr % 8;
                         
-                        // Cek 4 tetangga
                         if (cr > 0 && grid[cr-1][cc] === 0 && visited[(cr-1)*8 + cc] === 0) {
                             visited[(cr-1)*8 + cc] = 1; q[tail++] = (cr-1)*8 + cc;
                         }
@@ -112,7 +115,6 @@ class AIEngine {
                         }
                     }
                     
-                    // Hukuman Dead Zones
                     if (areaSize === 1) penalty -= 500000;
                     else if (areaSize === 2) penalty -= 300000;
                     else if (areaSize === 3) penalty -= 200000;
@@ -152,7 +154,6 @@ class AIEngine {
         return roughness;
     }
     
-    // FUNGSI BARU: Sentralisasi perhitungan skor papan agar DRY (Don't Repeat Yourself)
     evaluate_board_survival(grid, initial_score = 0) {
         let final_score = initial_score;
         let can3x3 = false, can5x1 = false, can1x5 = false;
@@ -232,14 +233,12 @@ class AIEngine {
                 return { score: this.evaluate_board_survival(current_grid, current_score), path: path };
             }
             
-            // Perbaikan Fatal: Dari -9999999 menjadi -Infinity
             let best_future = { score: -Infinity, path: path };
             let placed_any = false;
             
             for (let i = 0; i < remaining_blocks.length; i++) {
                 let item = remaining_blocks[i];
                 
-                // Perbaikan Looping: Dibatasi agar tidak buang resource ngecek dinding out-of-bounds
                 for (let r = 0; r <= 8 - item.block.length; r++) {
                     for (let c = 0; c <= 8 - item.block[0].length; c++) {
                         if (state.can_place(item.block, r, c, current_grid)) {
@@ -411,23 +410,31 @@ class AIEngine {
     }
 }
 
-// UI State & Logic
+// ==========================================
+// UI STATE & LOGIC
+// ==========================================
 const state = new GameState();
 const ai = new AIEngine();
 let spawnerQueues = [null, null, null];
 let currentRecommendation = null;
 let itemRecommendation = null;
 
+// UPDATED: 47 default shapes including new 'U' shapes
 const defaultShapes = [
-    [[1]],[[1,1]],[[1],[1]],[[1,1,1]],[[1],[1],[1]],[[1,1,1,1,1]],[[1],[1],[1],[1],[1]],[[1,1],[1,1]],[[1,1,1],[1,1,1],[1,1,1]],[[1,0],[1,1]],[[0,1],[1,1]],[[1,1],[1,0]],[[1,1],[0,1]],[[1,1,1],[0,1,0]],[[0,1,0],[1,1,1]],[[1,1,1],[0,0,1]],[[1,0,0],[1,1,1]],[[1,1,1],[1,0,0]],[[0,0,1],[1,1,1]],[[0,1,1],[1,1,0]],[[1,1,0],[0,1,1]],[[1,0],[1,1],[1,0]],[[0,1],[1,1],[0,1]],[[0,1],[1,1],[1,0]],[[1,0],[1,0],[1,1]],[[1,0],[1,1],[0,1]],[[0,1],[0,1],[1,1]],[[1,1],[0,1],[0,1]],[[1,1],[1,0],[1,0]],[[1,0,0],[1,0,0],[1,1,1]],[[0,0,1],[0,0,1],[1,1,1]],[[1,1,1],[1,0,0],[1,0,0]],[[1,1,1],[0,0,1],[0,0,1]],[[1,0,0],[1,1,1],[1,0,0]],[[0,0,1],[1,1,1],[0,0,1]],[[0,1,0],[0,1,0],[1,1,1]],[[1,1,1],[0,1,0],[0,1,0]],[[1,0],[0,1]],[[0,1],[1,0]],[[1,0,0],[0,1,0],[0,0,1]],[[0,0,1],[0,1,0],[1,0,0]],[[1,1],[1,0],[1,1]],[[1,1],[0,1],[1,1]],[[1,1,1],[1,1,1]],[[1,1],[1,1],[1,1]]
+    [[1]],[[1,1],[1,1]],[[1,1,1],[1,1,1],[1,1,1]],[[1,1,1],[1,1,1]],[[1,1],[1,1],[1,1]],[[1,1]],[[1],[1]],[[1,1,1]],[[1],[1],[1]],[[1,1,1,1,1]],[[1],[1],[1],[1],[1]],[[1,0],[0,1]],[[0,1],[1,0]],[[1,0,0],[0,1,0],[0,0,1]],[[0,0,1],[0,1,0],[1,0,0]],[[1,0],[1,1]],[[0,1],[1,1]],[[1,1],[1,0]],[[1,1],[0,1]],[[1,0],[1,0],[1,1]],[[0,1],[0,1],[1,1]],[[1,1],[1,0],[1,0]],[[1,1],[0,1],[0,1]],[[1,1,1],[1,0,0]],[[1,1,1],[0,0,1]],[[1,0,0],[1,1,1]],[[0,0,1],[1,1,1]],[[1,0,0],[1,0,0],[1,1,1]],[[0,0,1],[0,0,1],[1,1,1]],[[1,1,1],[1,0,0],[1,0,0]],[[1,1,1],[0,0,1],[0,0,1]],[[1,1,1],[0,1,0]],[[0,1,0],[1,1,1]],[[1,0],[1,1],[1,0]],[[0,1],[1,1],[0,1]],[[1,0,0],[1,1,1],[1,0,0]],[[0,0,1],[1,1,1],[0,0,1]],[[0,1,0],[0,1,0],[1,1,1]],[[1,1,1],[0,1,0],[0,1,0]],[[0,1,1],[1,1,0]],[[1,1,0],[0,1,1]],[[1,0],[1,1],[0,1]],[[0,1],[1,1],[1,0]],[[1,1],[1,0],[1,1]],[[1,1],[0,1],[1,1]],[[1,1,1],[1,0,1]],[[1,0,1],[1,1,1]]
 ];
+
+const shapeOrder = [
+    [[1]],[[1,1],[1,1]],[[1,1,1],[1,1,1],[1,1,1]],[[1,1,1],[1,1,1]],[[1,1],[1,1],[1,1]],[[1,1]],[[1],[1]],[[1,1,1]],[[1],[1],[1]],[[1,1,1,1,1]],[[1],[1],[1],[1],[1]],[[1,0],[0,1]],[[0,1],[1,0]],[[1,0,0],[0,1,0],[0,0,1]],[[0,0,1],[0,1,0],[1,0,0]],[[1,0],[1,1]],[[0,1],[1,1]],[[1,1],[1,0]],[[1,1],[0,1]],[[1,0],[1,0],[1,1]],[[0,1],[0,1],[1,1]],[[1,1],[1,0],[1,0]],[[1,1],[0,1],[0,1]],[[1,1,1],[1,0,0]],[[1,1,1],[0,0,1]],[[1,0,0],[1,1,1]],[[0,0,1],[1,1,1]],[[1,0,0],[1,0,0],[1,1,1]],[[0,0,1],[0,0,1],[1,1,1]],[[1,1,1],[1,0,0],[1,0,0]],[[1,1,1],[0,0,1],[0,0,1]],[[1,1,1],[0,1,0]],[[0,1,0],[1,1,1]],[[1,0],[1,1],[1,0]],[[0,1],[1,1],[0,1]],[[1,0,0],[1,1,1],[1,0,0]],[[0,0,1],[1,1,1],[0,0,1]],[[0,1,0],[0,1,0],[1,1,1]],[[1,1,1],[0,1,0],[0,1,0]],[[0,1,1],[1,1,0]],[[1,1,0],[0,1,1]],[[1,0],[1,1],[0,1]],[[0,1],[1,1],[1,0]],[[1,1],[1,0],[1,1]],[[1,1],[0,1],[1,1]],[[1,1,1],[1,0,1]],[[1,0,1],[1,1,1]]
+];
+
 let library = [];
 
 function loadLibrary() {
     const saved = localStorage.getItem('blockzi_pwa_lib');
     if (saved) { 
         library = JSON.parse(saved); 
-        if (library.length !== 45) library = [];
+        if (library.length !== 47) library = []; // Mencegah reset jika jumlah balok tidak pas 47
     }
     if (!library || library.length === 0) {
         library = JSON.parse(JSON.stringify(defaultShapes));
@@ -453,26 +460,6 @@ function createMiniGrid(shape, cssClass = 'mini-cell') {
     });
     return mini;
 }
-
-const shapeOrder = [
-    [[1]], 
-    [[1,1],[1,1]], 
-    [[1,1,1],[1,1,1],[1,1,1]], [[1,1,1],[1,1,1]], [[1,1],[1,1],[1,1]],
-    [[1,1]], [[1],[1]],
-    [[1,1,1]], [[1],[1],[1]],
-    [[1,1,1,1,1]], [[1],[1],[1],[1],[1]],
-    [[1,0],[0,1]], [[0,1],[1,0]],
-    [[1,0,0],[0,1,0],[0,0,1]], [[0,0,1],[0,1,0],[1,0,0]],
-    [[1,0],[1,1]], [[0,1],[1,1]], [[1,1],[1,0]], [[1,1],[0,1]],
-    [[1,0],[1,0],[1,1]], [[0,1],[0,1],[1,1]], [[1,1],[1,0],[1,0]], [[1,1],[0,1],[0,1]],
-    [[1,1,1],[1,0,0]], [[1,1,1],[0,0,1]], [[1,0,0],[1,1,1]], [[0,0,1],[1,1,1]],
-    [[1,0,0],[1,0,0],[1,1,1]], [[0,0,1],[0,0,1],[1,1,1]], [[1,1,1],[1,0,0],[1,0,0]], [[1,1,1],[0,0,1],[0,0,1]],
-    [[1,1,1],[0,1,0]], [[0,1,0],[1,1,1]], [[1,0],[1,1],[1,0]], [[0,1],[1,1],[0,1]],
-    [[1,0,0],[1,1,1],[1,0,0]], [[0,0,1],[1,1,1],[0,0,1]], [[0,1,0],[0,1,0],[1,1,1]], [[1,1,1],[0,1,0],[0,1,0]],
-    [[0,1,1],[1,1,0]], [[1,1,0],[0,1,1]],
-    [[1,0],[1,1],[0,1]], [[0,1],[1,1],[1,0]],
-    [[1,1],[1,0],[1,1]], [[1,1],[0,1],[1,1]]
-];
 
 function getShapeSortIndex(shape) {
     let str = JSON.stringify(shape);
@@ -764,9 +751,9 @@ document.getElementById('calculate-btn').onclick = () => {
         
     } else {
         let availabilities = {
-            can1x1: document.getElementById('use-1x1-toggle').checked,
-            canTrash: document.getElementById('use-hammer-toggle').checked,
-            canBomb: document.getElementById('use-bomb-toggle').checked
+            can1x1: document.getElementById('use-1x1-toggle') ? document.getElementById('use-1x1-toggle').checked : false,
+            canTrash: document.getElementById('use-hammer-toggle') ? document.getElementById('use-hammer-toggle').checked : false,
+            canBomb: document.getElementById('use-bomb-toggle') ? document.getElementById('use-bomb-toggle').checked : false
         };
         let itemsAllowed = availabilities.can1x1 || availabilities.canTrash || availabilities.canBomb;
         
@@ -850,6 +837,9 @@ document.getElementById('import-lib-btn').onclick = () => {
     }
 };
 
+// ==========================================
+// INITIALIZATION
+// ==========================================
 loadLibrary();
 initBoard();
 initBuilder();

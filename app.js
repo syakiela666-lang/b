@@ -190,171 +190,197 @@ class AIEngine {
         return penalty;
     }
 
-    // ========== BRAIN 1: EDGE HUGGER (Tepi) ==========
-    // Strategy: Keep center clean, hug the walls
+    // ========== BRAIN 1: PREDIKTIF (Predictive) ==========
+    // Strategy: Always save space for big blocks (3x3, 5-line) — anti game-over
+    countBigBlockSlots(grid) {
+        let slots3x3 = 0, slots5h = 0, slots5v = 0, slots2x2 = 0;
+        for (let r = 0; r <= 5; r++) for (let c = 0; c <= 5; c++) {
+            let ok = true;
+            for (let br = 0; br < 3 && ok; br++) for (let bc = 0; bc < 3 && ok; bc++) if (grid[r+br][c+bc] !== 0) ok = false;
+            if (ok) slots3x3++;
+        }
+        for (let r = 0; r < 8; r++) for (let c = 0; c <= 3; c++) {
+            let ok = true;
+            for (let bc = 0; bc < 5 && ok; bc++) if (grid[r][c+bc] !== 0) ok = false;
+            if (ok) slots5h++;
+        }
+        for (let r = 0; r <= 3; r++) for (let c = 0; c < 8; c++) {
+            let ok = true;
+            for (let br = 0; br < 5 && ok; br++) if (grid[r+br][c] !== 0) ok = false;
+            if (ok) slots5v++;
+        }
+        for (let r = 0; r <= 6; r++) for (let c = 0; c <= 6; c++) {
+            if (grid[r][c]===0 && grid[r][c+1]===0 && grid[r+1][c]===0 && grid[r+1][c+1]===0) slots2x2++;
+        }
+        return { slots3x3, slots5h, slots5v, slots2x2 };
+    }
+
     evaluate_brain1(grid, initial_score = 0) {
         let score = initial_score;
         let fit = this.canFitBlocks(grid);
-        if (!fit.can3x3) score -= 500000;
-        if (!fit.can5x1) score -= 100000;
-        if (!fit.can1x5) score -= 100000;
+        let slots = this.countBigBlockSlots(grid);
+
+        // WAJIB bisa fit 3x3 — kalau gak bisa, penalty GEDE
+        if (!fit.can3x3) score -= 2000000;
+        if (!fit.can5x1) score -= 500000;
+        if (!fit.can1x5) score -= 500000;
+
+        // Reward BANYAK slot buat balok gede (bukan cuma bisa/tidak)
+        score += slots.slots3x3 * 40000;  // tiap posisi 3x3 possible = bonus
+        score += slots.slots5h * 15000;
+        score += slots.slots5v * 15000;
+        score += slots.slots2x2 * 8000;
+
+        // Dead zones
         score += this.getDeadZonesScore(grid);
-        score -= this.getGridRoughness(grid) * 350;
-        score += this.countNearCompleteLines(grid) * 10000;
 
-        // FIX: Bonus ruang kosong (semakin kosong = semakin bagus)
-        let emptyCells = this.countEmptyCells(grid);
-        score += emptyCells * 3000;
+        // Roughness — keep board tidy
+        score -= this.getGridRoughness(grid) * 400;
 
-        // FIX: Penalty kalau tidak ada ruang 2x2 kosong
-        let has2x2 = false;
-        for (let r = 0; r <= 6 && !has2x2; r++) for (let c = 0; c <= 6 && !has2x2; c++) {
-            if (grid[r][c]===0 && grid[r][c+1]===0 && grid[r+1][c]===0 && grid[r+1][c+1]===0) has2x2 = true;
-        }
-        if (!has2x2) score -= 800000;
+        // Empty cells bonus
+        let empty = this.countEmptyCells(grid);
+        score += empty * 5000;
 
-        // Center penalty: cells in 4x4 center get heavy penalty
-        let centerPenalty = 0;
-        for (let r = 2; r <= 5; r++) {
-            for (let c = 2; c <= 5; c++) {
-                if (grid[r][c] === 1) centerPenalty += 8000;
-            }
-        }
-        score -= centerPenalty;
+        // Near-complete lines — still reward clears
+        score += this.countNearCompleteLines(grid) * 12000;
 
-        // Edge bonus: filled cells near walls get bonus
-        let edgeBonus = 0;
-        for (let r = 0; r < 8; r++) {
-            for (let c = 0; c < 8; c++) {
-                if (grid[r][c] === 1) {
-                    if (r === 0 || r === 7) edgeBonus += 3000;
-                    if (c === 0 || c === 7) edgeBonus += 3000;
-                }
-            }
-        }
-        score += edgeBonus;
         return score;
     }
 
-    // Step score for Brain 1
     stepScore_brain1(lines_cleared, touching_edges, max_outer_edges, block, row, col, grid) {
-        let s = (lines_cleared * 90000) + (touching_edges * 600);
-        if (touching_edges >= (max_outer_edges * 0.8)) s += 10000;
-        if (grid) s += this.getDeadZoneStepPenalty(grid, block, row, col);
-        // Prefer edge positions
-        let centerDist = 0;
-        for (let br = 0; br < block.length; br++) {
-            for (let bc = 0; bc < block[0].length; bc++) {
-                if (block[br][bc] === 1) {
-                    let cr = row + br, cc = col + bc;
-                    centerDist += Math.abs(cr - 3.5) + Math.abs(cc - 3.5);
-                }
-            }
+        let s = (lines_cleared * 100000) + (touching_edges * 500);
+        if (grid) {
+            s += this.getDeadZoneStepPenalty(grid, block, row, col);
+            // Reward: after placement, still banyak slot buat balok gede?
+            let slots = this.countBigBlockSlots(grid);
+            s += slots.slots3x3 * 5000;
+            s += Math.min(slots.slots5h + slots.slots5v, 10) * 2000;
         }
-        s += centerDist * 1200;
         return s;
     }
 
-    // ========== BRAIN 2: LINE HUNTER (Garis) ==========
-    // Strategy: Aggressively fill rows/columns, maximize line clears
+    // ========== BRAIN 2: DARURAT (Emergency) ==========
+    // Strategy: Board penuh? AGRESIF clear line, no mercy
     evaluate_brain2(grid, initial_score = 0) {
         let score = initial_score;
         let fit = this.canFitBlocks(grid);
-        if (!fit.can3x3) score -= 500000;
-        if (!fit.can5x1) score -= 100000;
-        if (!fit.can1x5) score -= 100000;
+        if (!fit.can3x3) score -= 800000;
+        if (!fit.can5x1) score -= 200000;
+        if (!fit.can1x5) score -= 200000;
         score += this.getDeadZonesScore(grid);
-        // Less roughness penalty — we WANT to fill aggressively
-        score -= this.getGridRoughness(grid) * 150;
 
-        // Heavily reward near-complete lines
+        // AGRESIF: reward near-complete lines heavily
         let nearLines = 0;
-        let rowFills = [];
+        let rowFills = [], colFills = [];
         for (let r = 0; r < 8; r++) {
             let filled = grid[r].filter(v => v === 1).length;
             rowFills.push(filled);
-            if (filled >= 6) nearLines++;
-            if (filled >= 7) nearLines += 2; // Extra reward for 7/8
+            if (filled === 7) nearLines += 4;      // 7/8 = almost clear!
+            else if (filled === 6) nearLines += 2;
+            else if (filled >= 5) nearLines += 1;
         }
-        let colFills = [];
         for (let c = 0; c < 8; c++) {
             let filled = 0;
             for (let r = 0; r < 8; r++) if (grid[r][c] === 1) filled++;
             colFills.push(filled);
-            if (filled >= 6) nearLines++;
-            if (filled >= 7) nearLines += 2;
+            if (filled === 7) nearLines += 4;
+            else if (filled === 6) nearLines += 2;
+            else if (filled >= 5) nearLines += 1;
         }
-        score += nearLines * 20000;
+        score += nearLines * 30000;
 
-        // FIX: Bonus ruang kosong
-        let emptyCells2 = this.countEmptyCells(grid);
-        score += emptyCells2 * 3000;
+        // Concentrate filling on fewer lines (easier to clear)
+        let focusedRows = rowFills.filter(f => f >= 5).length;
+        let focusedCols = colFills.filter(f => f >= 5).length;
+        score += focusedRows * 8000;
+        score += focusedCols * 8000;
 
-        // FIX: Penalty kalau tidak ada ruang 2x2 kosong
-        let has2x2b = false;
-        for (let r = 0; r <= 6 && !has2x2b; r++) for (let c = 0; c <= 6 && !has2x2b; c++) {
-            if (grid[r][c]===0 && grid[r][c+1]===0 && grid[r+1][c]===0 && grid[r+1][c+1]===0) has2x2b = true;
-        }
-        if (!has2x2b) score -= 800000;
-
-        // Reward focusing on fewer lines (concentrate filling)
-        let focusedRows = rowFills.filter(f => f >= 4).length;
+        // Empty rows/cols bonus (keep some completely clear)
         let emptyRows = rowFills.filter(f => f === 0).length;
-        score += focusedRows * 5000;
-        score += emptyRows * 3000; // Keep some rows completely empty
-
-        let focusedCols = colFills.filter(f => f >= 4).length;
         let emptyCols = colFills.filter(f => f === 0).length;
-        score += focusedCols * 5000;
-        score += emptyCols * 3000;
+        score += emptyRows * 5000;
+        score += emptyCols * 5000;
+
+        // Less roughness penalty — we want to fill aggressively
+        score -= this.getGridRoughness(grid) * 150;
+
+        // Empty cells bonus (but less than Prediktif)
+        let empty = this.countEmptyCells(grid);
+        score += empty * 2000;
 
         return score;
     }
 
-    // Step score for Brain 2
     stepScore_brain2(lines_cleared, touching_edges, max_outer_edges, block, row, col, grid) {
-        let s = (lines_cleared * 140000) + (touching_edges * 400);
-        if (touching_edges >= (max_outer_edges * 0.8)) s += 10000;
-        if (grid) s += this.getDeadZoneStepPenalty(grid, block, row, col);
-        // Bonus for adding to rows/cols that are already partially filled
-        let rowFillBefore = 0, colFillBefore = 0;
-        for (let br = 0; br < block.length; br++) {
-            for (let bc = 0; bc < block[0].length; bc++) {
-                if (block[br][bc] === 1) {
-                    let cr = row + br, cc = col + bc;
-                    rowFillBefore += grid[cr].filter(v => v === 1).length;
-                    let cf = 0; for (let r = 0; r < 8; r++) if (grid[r][cc] === 1) cf++;
-                    colFillBefore += cf;
+        // LINE CLEAR IS KING — 150k per line
+        let s = (lines_cleared * 150000) + (touching_edges * 300);
+        if (grid) {
+            s += this.getDeadZoneStepPenalty(grid, block, row, col);
+            // Bonus: adding to rows/cols that are already partially filled
+            let rowFill = 0, colFill = 0;
+            for (let br = 0; br < block.length; br++) {
+                for (let bc = 0; bc < block[0].length; bc++) {
+                    if (block[br][bc] === 1) {
+                        let cr = row + br, cc = col + bc;
+                        rowFill += grid[cr].filter(v => v === 1).length;
+                        let cf = 0; for (let r = 0; r < 8; r++) if (grid[r][cc] === 1) cf++;
+                        colFill += cf;
+                    }
                 }
             }
+            s += (rowFill + colFill) * 500;
         }
-        s += (rowFillBefore + colFillBefore) * 400;
+        // Multi-line clear BONUS (2 lines = bonus, 3+ = jackpot)
+        if (lines_cleared >= 2) s += lines_cleared * 50000;
         return s;
     }
 
-    // ========== BRAIN 3: SPACE BALANCER (Sebar) ==========
-    // Strategy: Spread evenly, maximize connected open space
+    // ========== BRAIN 3: COMBO (Chain Clear) ==========
+    // Strategy: Build multiple near-complete lines, clear them together
     evaluate_brain3(grid, initial_score = 0) {
         let score = initial_score;
         let fit = this.canFitBlocks(grid);
-        if (!fit.can3x3) score -= 500000;
-        if (!fit.can5x1) score -= 100000;
-        if (!fit.can1x5) score -= 100000;
-        score += this.getDeadZonesScore(grid) * 1.5; // Even more strict on dead zones
+        if (!fit.can3x3) score -= 1000000;
+        if (!fit.can5x1) score -= 300000;
+        if (!fit.can1x5) score -= 300000;
+        score += this.getDeadZonesScore(grid) * 1.3;
 
-        // Find largest connected empty region
+        // Count "setup" lines (6-7 filled = ready to clear)
+        let setupRows = 0, setupCols = 0;
+        let rowFills = [], colFills = [];
+        for (let r = 0; r < 8; r++) {
+            let filled = grid[r].filter(v => v === 1).length;
+            rowFills.push(filled);
+            if (filled === 7) setupRows += 5;
+            else if (filled === 6) setupRows += 3;
+            else if (filled === 5) setupRows += 1;
+        }
+        for (let c = 0; c < 8; c++) {
+            let filled = 0;
+            for (let r = 0; r < 8; r++) if (grid[r][c] === 1) filled++;
+            colFills.push(filled);
+            if (filled === 7) setupCols += 5;
+            else if (filled === 6) setupCols += 3;
+            else if (filled === 5) setupCols += 1;
+        }
+        score += (setupRows + setupCols) * 25000;
+
+        // Reward having MULTIPLE near-complete lines (combo potential)
+        let totalNearComplete = rowFills.filter(f => f >= 6).length + colFills.filter(f => f >= 6).length;
+        if (totalNearComplete >= 2) score += totalNearComplete * 50000; // combo multiplier
+        if (totalNearComplete >= 3) score += 200000; // JACKPOT setup
+
+        // Connected empty space — penting buat flexibility
         let visited = new Uint8Array(64);
         let q = new Uint8Array(64);
-        let maxRegion = 0;
-        let totalEmpty = 0;
+        let maxRegion = 0, totalEmpty = 0;
         for (let r = 0; r < 8; r++) {
             for (let c = 0; c < 8; c++) {
-                let idx = r * 8 + c;
                 if (grid[r][c] === 0) {
                     totalEmpty++;
+                    let idx = r * 8 + c;
                     if (visited[idx] === 0) {
-                        let regionSize = 0;
-                        let head = 0, tail = 0;
+                        let regionSize = 0, head = 0, tail = 0;
                         q[tail++] = idx; visited[idx] = 1;
                         while (head < tail) {
                             let curr = q[head++]; regionSize++;
@@ -369,141 +395,53 @@ class AIEngine {
                 }
             }
         }
-        // Reward having one big connected open space
-        score += maxRegion * 15000;
-        // Penalize fragmentation: if maxRegion < totalEmpty * 0.6, bad
+        score += maxRegion * 12000;
         if (totalEmpty > 0 && maxRegion < totalEmpty * 0.6) {
-            score -= (totalEmpty * 0.6 - maxRegion) * 25000;
+            score -= (totalEmpty * 0.6 - maxRegion) * 20000;
         }
 
-        // Even distribution: penalize quadrant imbalance
-        let quadrants = [0, 0, 0, 0];
-        for (let r = 0; r < 8; r++) {
-            for (let c = 0; c < 8; c++) {
-                if (grid[r][c] === 1) {
-                    let qi = (r < 4 ? 0 : 2) + (c < 4 ? 0 : 1);
-                    quadrants[qi]++;
-                }
-            }
-        }
-        let avgQ = quadrants.reduce((a, b) => a + b, 0) / 4;
-        let imbalance = quadrants.reduce((s, q) => s + Math.abs(q - avgQ), 0);
-        score -= imbalance * 4000;
-
-        score -= this.getGridRoughness(grid) * 250;
-        score += this.countNearCompleteLines(grid) * 8000;
-
-        // FIX: Bonus ruang kosong (extra untuk Sebar)
-        let emptyCells3 = this.countEmptyCells(grid);
-        score += emptyCells3 * 4000;
-
-        // FIX: Penalty kalau tidak ada ruang 2x2 kosong
-        let has2x2c = false;
-        for (let r = 0; r <= 6 && !has2x2c; r++) for (let c = 0; c <= 6 && !has2x2c; c++) {
-            if (grid[r][c]===0 && grid[r][c+1]===0 && grid[r+1][c]===0 && grid[r+1][c+1]===0) has2x2c = true;
-        }
-        if (!has2x2c) score -= 800000;
-
-        return score;
-    }
-
-    // Step score for Brain 3
-    stepScore_brain3(lines_cleared, touching_edges, max_outer_edges, block, row, col, grid) {
-        let s = (lines_cleared * 90000) + (touching_edges * 500);
-        if (touching_edges >= (max_outer_edges * 0.8)) s += 10000;
-        if (grid) s += this.getDeadZoneStepPenalty(grid, block, row, col);
-        let neighborCount = 0;
-        for (let br = 0; br < block.length; br++) {
-            for (let bc = 0; bc < block[0].length; bc++) {
-                if (block[br][bc] === 1) {
-                    let cr = row + br, cc = col + bc;
-                    if (cr > 0 && grid[cr-1][cc] === 1) neighborCount++;
-                    if (cr < 7 && grid[cr+1][cc] === 1) neighborCount++;
-                    if (cc > 0 && grid[cr][cc-1] === 1) neighborCount++;
-                    if (cc < 7 && grid[cr][cc+1] === 1) neighborCount++;
-                }
-            }
-        }
-        s += neighborCount * 2000;
-        return s;
-    }
-
-    // ========== BRAIN 5: TENGAH (Center Clear) ==========
-    // Strategy: Keep 4x4 center completely empty, fill only edges
-    evaluate_brain5(grid, initial_score = 0) {
-        let score = initial_score;
-        let fit = this.canFitBlocks(grid);
-        if (!fit.can3x3) score -= 500000;
-        if (!fit.can5x1) score -= 100000;
-        if (!fit.can1x5) score -= 100000;
-        score += this.getDeadZonesScore(grid);
+        // Roughness
         score -= this.getGridRoughness(grid) * 300;
-        score += this.countNearCompleteLines(grid) * 12000;
 
-        // EXTREME center penalty: 4x4 center (r=2-5, c=2-5) must stay empty
-        let centerPenalty = 0;
-        let centerEmpty = 0;
-        for (let r = 2; r <= 5; r++) {
-            for (let c = 2; c <= 5; c++) {
-                if (grid[r][c] === 1) centerPenalty += 20000;
-                else centerEmpty++;
-            }
+        // Empty cells
+        score += totalEmpty * 4000;
+
+        // 2x2 space check
+        let has2x2 = false;
+        for (let r = 0; r <= 6 && !has2x2; r++) for (let c = 0; c <= 6 && !has2x2; c++) {
+            if (grid[r][c]===0 && grid[r][c+1]===0 && grid[r+1][c]===0 && grid[r+1][c+1]===0) has2x2 = true;
         }
-        score -= centerPenalty;
-        score += centerEmpty * 8000; // Reward each empty center cell
-
-        // Bonus if full 4x4 center is empty
-        if (centerEmpty === 16) score += 500000;
-
-        // Reward filling edge ring (r=0,1,6,7 or c=0,1,6,7 but NOT center)
-        let edgeRingFilled = 0;
-        for (let r = 0; r < 8; r++) {
-            for (let c = 0; c < 8; c++) {
-                if (grid[r][c] === 1 && (r < 2 || r > 5 || c < 2 || c > 5)) {
-                    edgeRingFilled++;
-                }
-            }
-        }
-        score += edgeRingFilled * 4000;
-
-        // FIX: Bonus ruang kosong
-        let emptyCells5 = this.countEmptyCells(grid);
-        score += emptyCells5 * 3000;
-
-        // FIX: Penalty kalau tidak ada ruang 2x2 kosong
-        let has2x2e = false;
-        for (let r = 0; r <= 6 && !has2x2e; r++) for (let c = 0; c <= 6 && !has2x2e; c++) {
-            if (grid[r][c]===0 && grid[r][c+1]===0 && grid[r+1][c]===0 && grid[r+1][c+1]===0) has2x2e = true;
-        }
-        if (!has2x2e) score -= 800000;
+        if (!has2x2) score -= 600000;
 
         return score;
     }
 
-    // Step score for Brain 5
-    stepScore_brain5(lines_cleared, touching_edges, max_outer_edges, block, row, col, grid) {
-        let s = (lines_cleared * 95000) + (touching_edges * 500);
-        if (touching_edges >= (max_outer_edges * 0.8)) s += 10000;
-        if (grid) s += this.getDeadZoneStepPenalty(grid, block, row, col);
-        // Heavy reward for placing OUTSIDE center
-        let centerCells = 0, nonCenterCells = 0;
-        for (let br = 0; br < block.length; br++) {
-            for (let bc = 0; bc < block[0].length; bc++) {
-                if (block[br][bc] === 1) {
-                    let cr = row + br, cc = col + bc;
-                    if (cr >= 2 && cr <= 5 && cc >= 2 && cc <= 5) centerCells++;
-                    else nonCenterCells++;
+    stepScore_brain3(lines_cleared, touching_edges, max_outer_edges, block, row, col, grid) {
+        let s = (lines_cleared * 100000) + (touching_edges * 400);
+        if (grid) {
+            s += this.getDeadZoneStepPenalty(grid, block, row, col);
+            // Reward: adding to lines that are already building up
+            let buildup = 0;
+            for (let br = 0; br < block.length; br++) {
+                for (let bc = 0; bc < block[0].length; bc++) {
+                    if (block[br][bc] === 1) {
+                        let cr = row + br, cc = col + bc;
+                        let rf = grid[cr].filter(v => v === 1).length;
+                        let cf = 0; for (let r = 0; r < 8; r++) if (grid[r][cc] === 1) cf++;
+                        if (rf >= 4) buildup += rf * 800;
+                        if (cf >= 4) buildup += cf * 800;
+                    }
                 }
             }
+            s += buildup;
         }
-        s += nonCenterCells * 5000;
-        s -= centerCells * 25000;
+        // Multi-line clear bonus
+        if (lines_cleared >= 2) s += lines_cleared * 40000;
         return s;
     }
 
-    // ========== BRAIN 4: ADAPTIVE (Auto) ==========
-    // Strategy: Switch strategy based on board fill %
-    // <40% = Garis (agresif), 40-65% = Sebar (seimbang), >65% = Tepi (defensif)
+    // ========== ADAPTIVE (Auto) ==========
+    // Strategy: <35% = Combo, 35-60% = Prediktif, >60% = Darurat
     getBoardFillPercent(grid) {
         let filled = 0;
         for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) if (grid[r][c] === 1) filled++;
@@ -512,23 +450,23 @@ class AIEngine {
 
     getAdaptiveSubMode(grid) {
         let fill = this.getBoardFillPercent(grid);
-        if (fill < 40) return 2;       // Garis — board masih lega, gas clear line
-        if (fill <= 65) return 3;       // Sebar — mulai rame, jaga keseimbangan
-        return 1;                        // Tepi — penuh, defensif jaga tengah
+        if (fill < 35) return 3;       // Combo — board lega, bangun chain clear
+        if (fill <= 60) return 1;       // Prediktif — mulai rame, sisain ruang
+        return 2;                        // Darurat — penuh, gas clear agresif
     }
 
     evaluate_brain4(grid, initial_score = 0) {
         let subMode = this.getAdaptiveSubMode(grid);
+        if (subMode === 1) return this.evaluate_brain1(grid, initial_score);
         if (subMode === 2) return this.evaluate_brain2(grid, initial_score);
-        if (subMode === 3) return this.evaluate_brain3(grid, initial_score);
-        return this.evaluate_brain1(grid, initial_score);
+        return this.evaluate_brain3(grid, initial_score);
     }
 
     stepScore_brain4(lines_cleared, touching_edges, max_outer_edges, block, row, col, grid) {
         let subMode = this.getAdaptiveSubMode(grid);
+        if (subMode === 1) return this.stepScore_brain1(lines_cleared, touching_edges, max_outer_edges, block, row, col, grid);
         if (subMode === 2) return this.stepScore_brain2(lines_cleared, touching_edges, max_outer_edges, block, row, col, grid);
-        if (subMode === 3) return this.stepScore_brain3(lines_cleared, touching_edges, max_outer_edges, block, row, col, grid);
-        return this.stepScore_brain1(lines_cleared, touching_edges, max_outer_edges, block, row, col, grid);
+        return this.stepScore_brain3(lines_cleared, touching_edges, max_outer_edges, block, row, col, grid);
     }
 
     // ========== SHARED: clear lines on a grid ==========
@@ -562,13 +500,11 @@ class AIEngine {
         const evalFn = brainMode === 1 ? (g, s) => this.evaluate_brain1(g, s)
                      : brainMode === 2 ? (g, s) => this.evaluate_brain2(g, s)
                      : brainMode === 3 ? (g, s) => this.evaluate_brain3(g, s)
-                     : brainMode === 5 ? (g, s) => this.evaluate_brain5(g, s)
                      : (g, s) => this.evaluate_brain4(g, s);
 
         const stepFn = brainMode === 1 ? (lc, te, moe, b, r, c, g) => this.stepScore_brain1(lc, te, moe, b, r, c, g)
                      : brainMode === 2 ? (lc, te, moe, b, r, c, g) => this.stepScore_brain2(lc, te, moe, b, r, c, g)
                      : brainMode === 3 ? (lc, te, moe, b, r, c, g) => this.stepScore_brain3(lc, te, moe, b, r, c, g)
-                     : brainMode === 5 ? (lc, te, moe, b, r, c, g) => this.stepScore_brain5(lc, te, moe, b, r, c, g)
                      : (lc, te, moe, b, r, c, g) => this.stepScore_brain4(lc, te, moe, b, r, c, g);
 
         const dfs = (current_grid, remaining_blocks, current_score, path, total_lines_cleared = 0) => {
@@ -631,7 +567,6 @@ class AIEngine {
         const evalBoard = (g, s) => brainMode === 1 ? this.evaluate_brain1(g, s)
             : brainMode === 2 ? this.evaluate_brain2(g, s)
             : brainMode === 3 ? this.evaluate_brain3(g, s)
-            : brainMode === 5 ? this.evaluate_brain5(g, s)
             : this.evaluate_brain4(g, s);
         
         const simulate_all_placements = (grid, blocks, current_score = 0) => {
@@ -1122,11 +1057,11 @@ document.getElementById('calculate-btn').onclick = () => {
     let brainLabel;
     if (currentBrainMode === 4) {
         let sub = ai.getAdaptiveSubMode(state.grid);
-        let subName = sub === 2 ? "Garis" : sub === 3 ? "Sebar" : "Tepi";
+        let subName = sub === 1 ? "Prediktif" : sub === 2 ? "Darurat" : "Combo";
         let fillPct = Math.round(ai.getBoardFillPercent(state.grid));
         brainLabel = `Auto\u2192${subName} (${fillPct}%)`;
     } else {
-        brainLabel = currentBrainMode === 1 ? "Tepi" : currentBrainMode === 2 ? "Garis" : currentBrainMode === 3 ? "Sebar" : "Tengah";
+        brainLabel = currentBrainMode === 1 ? "Prediktif" : currentBrainMode === 2 ? "Darurat" : "Combo";
     }
     let result = ai.find_best_move(state, spawnerQueues, currentBrainMode);
     let isKiamat = result && result.score < -500000;

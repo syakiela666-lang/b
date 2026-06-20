@@ -155,6 +155,41 @@ class AIEngine {
         return { can3x3, can5x1, can1x5 };
     }
 
+    // Shared: count empty cells
+    countEmptyCells(grid) {
+        let empty = 0;
+        for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) if (grid[r][c] === 0) empty++;
+        return empty;
+    }
+
+    // Shared: dead zone step penalty (fast check for isolated cells created by placement)
+    getDeadZoneStepPenalty(grid, block, row, col) {
+        let penalty = 0;
+        let affected = new Set();
+        for (let br = 0; br < block.length; br++) {
+            for (let bc = 0; bc < block[0].length; bc++) {
+                if (block[br][bc] === 1) {
+                    let r = row + br, c = col + bc;
+                    if (r > 0 && grid[r-1][c] === 0) affected.add((r-1)*8+c);
+                    if (r < 7 && grid[r+1][c] === 0) affected.add((r+1)*8+c);
+                    if (c > 0 && grid[r][c-1] === 0) affected.add(r*8+(c-1));
+                    if (c < 7 && grid[r][c+1] === 0) affected.add(r*8+(c+1));
+                }
+            }
+        }
+        for (let idx of affected) {
+            let cr = Math.floor(idx/8), cc = idx%8;
+            let neighbors = 0;
+            if (cr > 0 && grid[cr-1][cc] === 0) neighbors++;
+            if (cr < 7 && grid[cr+1][cc] === 0) neighbors++;
+            if (cc > 0 && grid[cr][cc-1] === 0) neighbors++;
+            if (cc < 7 && grid[cr][cc+1] === 0) neighbors++;
+            if (neighbors === 0) penalty -= 400000;
+            else if (neighbors === 1) penalty -= 150000;
+        }
+        return penalty;
+    }
+
     // ========== BRAIN 1: EDGE HUGGER (Tepi) ==========
     // Strategy: Keep center clean, hug the walls
     evaluate_brain1(grid, initial_score = 0) {
@@ -166,6 +201,17 @@ class AIEngine {
         score += this.getDeadZonesScore(grid);
         score -= this.getGridRoughness(grid) * 350;
         score += this.countNearCompleteLines(grid) * 10000;
+
+        // FIX: Bonus ruang kosong (semakin kosong = semakin bagus)
+        let emptyCells = this.countEmptyCells(grid);
+        score += emptyCells * 3000;
+
+        // FIX: Penalty kalau tidak ada ruang 2x2 kosong
+        let has2x2 = false;
+        for (let r = 0; r <= 6 && !has2x2; r++) for (let c = 0; c <= 6 && !has2x2; c++) {
+            if (grid[r][c]===0 && grid[r][c+1]===0 && grid[r+1][c]===0 && grid[r+1][c+1]===0) has2x2 = true;
+        }
+        if (!has2x2) score -= 800000;
 
         // Center penalty: cells in 4x4 center get heavy penalty
         let centerPenalty = 0;
@@ -191,9 +237,10 @@ class AIEngine {
     }
 
     // Step score for Brain 1
-    stepScore_brain1(lines_cleared, touching_edges, max_outer_edges, block, row, col) {
-        let s = (lines_cleared * 75000) + (touching_edges * 1500);
-        if (touching_edges >= (max_outer_edges * 0.8)) s += 25000;
+    stepScore_brain1(lines_cleared, touching_edges, max_outer_edges, block, row, col, grid) {
+        let s = (lines_cleared * 90000) + (touching_edges * 600);
+        if (touching_edges >= (max_outer_edges * 0.8)) s += 10000;
+        if (grid) s += this.getDeadZoneStepPenalty(grid, block, row, col);
         // Prefer edge positions
         let centerDist = 0;
         for (let br = 0; br < block.length; br++) {
@@ -239,6 +286,17 @@ class AIEngine {
         }
         score += nearLines * 20000;
 
+        // FIX: Bonus ruang kosong
+        let emptyCells2 = this.countEmptyCells(grid);
+        score += emptyCells2 * 3000;
+
+        // FIX: Penalty kalau tidak ada ruang 2x2 kosong
+        let has2x2b = false;
+        for (let r = 0; r <= 6 && !has2x2b; r++) for (let c = 0; c <= 6 && !has2x2b; c++) {
+            if (grid[r][c]===0 && grid[r][c+1]===0 && grid[r+1][c]===0 && grid[r+1][c+1]===0) has2x2b = true;
+        }
+        if (!has2x2b) score -= 800000;
+
         // Reward focusing on fewer lines (concentrate filling)
         let focusedRows = rowFills.filter(f => f >= 4).length;
         let emptyRows = rowFills.filter(f => f === 0).length;
@@ -255,8 +313,9 @@ class AIEngine {
 
     // Step score for Brain 2
     stepScore_brain2(lines_cleared, touching_edges, max_outer_edges, block, row, col, grid) {
-        let s = (lines_cleared * 120000) + (touching_edges * 800);
-        if (touching_edges >= (max_outer_edges * 0.8)) s += 25000;
+        let s = (lines_cleared * 140000) + (touching_edges * 400);
+        if (touching_edges >= (max_outer_edges * 0.8)) s += 10000;
+        if (grid) s += this.getDeadZoneStepPenalty(grid, block, row, col);
         // Bonus for adding to rows/cols that are already partially filled
         let rowFillBefore = 0, colFillBefore = 0;
         for (let br = 0; br < block.length; br++) {
@@ -333,13 +392,26 @@ class AIEngine {
 
         score -= this.getGridRoughness(grid) * 250;
         score += this.countNearCompleteLines(grid) * 8000;
+
+        // FIX: Bonus ruang kosong (extra untuk Sebar)
+        let emptyCells3 = this.countEmptyCells(grid);
+        score += emptyCells3 * 4000;
+
+        // FIX: Penalty kalau tidak ada ruang 2x2 kosong
+        let has2x2c = false;
+        for (let r = 0; r <= 6 && !has2x2c; r++) for (let c = 0; c <= 6 && !has2x2c; c++) {
+            if (grid[r][c]===0 && grid[r][c+1]===0 && grid[r+1][c]===0 && grid[r+1][c+1]===0) has2x2c = true;
+        }
+        if (!has2x2c) score -= 800000;
+
         return score;
     }
 
     // Step score for Brain 3
     stepScore_brain3(lines_cleared, touching_edges, max_outer_edges, block, row, col, grid) {
-        let s = (lines_cleared * 75000) + (touching_edges * 1000);
-        if (touching_edges >= (max_outer_edges * 0.8)) s += 25000;
+        let s = (lines_cleared * 90000) + (touching_edges * 500);
+        if (touching_edges >= (max_outer_edges * 0.8)) s += 10000;
+        if (grid) s += this.getDeadZoneStepPenalty(grid, block, row, col);
         let neighborCount = 0;
         for (let br = 0; br < block.length; br++) {
             for (let bc = 0; bc < block[0].length; bc++) {
@@ -353,6 +425,79 @@ class AIEngine {
             }
         }
         s += neighborCount * 2000;
+        return s;
+    }
+
+    // ========== BRAIN 5: TENGAH (Center Clear) ==========
+    // Strategy: Keep 4x4 center completely empty, fill only edges
+    evaluate_brain5(grid, initial_score = 0) {
+        let score = initial_score;
+        let fit = this.canFitBlocks(grid);
+        if (!fit.can3x3) score -= 500000;
+        if (!fit.can5x1) score -= 100000;
+        if (!fit.can1x5) score -= 100000;
+        score += this.getDeadZonesScore(grid);
+        score -= this.getGridRoughness(grid) * 300;
+        score += this.countNearCompleteLines(grid) * 12000;
+
+        // EXTREME center penalty: 4x4 center (r=2-5, c=2-5) must stay empty
+        let centerPenalty = 0;
+        let centerEmpty = 0;
+        for (let r = 2; r <= 5; r++) {
+            for (let c = 2; c <= 5; c++) {
+                if (grid[r][c] === 1) centerPenalty += 20000;
+                else centerEmpty++;
+            }
+        }
+        score -= centerPenalty;
+        score += centerEmpty * 8000; // Reward each empty center cell
+
+        // Bonus if full 4x4 center is empty
+        if (centerEmpty === 16) score += 500000;
+
+        // Reward filling edge ring (r=0,1,6,7 or c=0,1,6,7 but NOT center)
+        let edgeRingFilled = 0;
+        for (let r = 0; r < 8; r++) {
+            for (let c = 0; c < 8; c++) {
+                if (grid[r][c] === 1 && (r < 2 || r > 5 || c < 2 || c > 5)) {
+                    edgeRingFilled++;
+                }
+            }
+        }
+        score += edgeRingFilled * 4000;
+
+        // FIX: Bonus ruang kosong
+        let emptyCells5 = this.countEmptyCells(grid);
+        score += emptyCells5 * 3000;
+
+        // FIX: Penalty kalau tidak ada ruang 2x2 kosong
+        let has2x2e = false;
+        for (let r = 0; r <= 6 && !has2x2e; r++) for (let c = 0; c <= 6 && !has2x2e; c++) {
+            if (grid[r][c]===0 && grid[r][c+1]===0 && grid[r+1][c]===0 && grid[r+1][c+1]===0) has2x2e = true;
+        }
+        if (!has2x2e) score -= 800000;
+
+        return score;
+    }
+
+    // Step score for Brain 5
+    stepScore_brain5(lines_cleared, touching_edges, max_outer_edges, block, row, col, grid) {
+        let s = (lines_cleared * 95000) + (touching_edges * 500);
+        if (touching_edges >= (max_outer_edges * 0.8)) s += 10000;
+        if (grid) s += this.getDeadZoneStepPenalty(grid, block, row, col);
+        // Heavy reward for placing OUTSIDE center
+        let centerCells = 0, nonCenterCells = 0;
+        for (let br = 0; br < block.length; br++) {
+            for (let bc = 0; bc < block[0].length; bc++) {
+                if (block[br][bc] === 1) {
+                    let cr = row + br, cc = col + bc;
+                    if (cr >= 2 && cr <= 5 && cc >= 2 && cc <= 5) centerCells++;
+                    else nonCenterCells++;
+                }
+            }
+        }
+        s += nonCenterCells * 5000;
+        s -= centerCells * 25000;
         return s;
     }
 
@@ -383,7 +528,7 @@ class AIEngine {
         let subMode = this.getAdaptiveSubMode(grid);
         if (subMode === 2) return this.stepScore_brain2(lines_cleared, touching_edges, max_outer_edges, block, row, col, grid);
         if (subMode === 3) return this.stepScore_brain3(lines_cleared, touching_edges, max_outer_edges, block, row, col, grid);
-        return this.stepScore_brain1(lines_cleared, touching_edges, max_outer_edges, block, row, col);
+        return this.stepScore_brain1(lines_cleared, touching_edges, max_outer_edges, block, row, col, grid);
     }
 
     // ========== SHARED: clear lines on a grid ==========
@@ -417,16 +562,18 @@ class AIEngine {
         const evalFn = brainMode === 1 ? (g, s) => this.evaluate_brain1(g, s)
                      : brainMode === 2 ? (g, s) => this.evaluate_brain2(g, s)
                      : brainMode === 3 ? (g, s) => this.evaluate_brain3(g, s)
+                     : brainMode === 5 ? (g, s) => this.evaluate_brain5(g, s)
                      : (g, s) => this.evaluate_brain4(g, s);
 
-        const stepFn = brainMode === 1 ? (lc, te, moe, b, r, c, g) => this.stepScore_brain1(lc, te, moe, b, r, c)
+        const stepFn = brainMode === 1 ? (lc, te, moe, b, r, c, g) => this.stepScore_brain1(lc, te, moe, b, r, c, g)
                      : brainMode === 2 ? (lc, te, moe, b, r, c, g) => this.stepScore_brain2(lc, te, moe, b, r, c, g)
                      : brainMode === 3 ? (lc, te, moe, b, r, c, g) => this.stepScore_brain3(lc, te, moe, b, r, c, g)
+                     : brainMode === 5 ? (lc, te, moe, b, r, c, g) => this.stepScore_brain5(lc, te, moe, b, r, c, g)
                      : (lc, te, moe, b, r, c, g) => this.stepScore_brain4(lc, te, moe, b, r, c, g);
 
-        const dfs = (current_grid, remaining_blocks, current_score, path) => {
+        const dfs = (current_grid, remaining_blocks, current_score, path, total_lines_cleared = 0) => {
             if (remaining_blocks.length === 0) {
-                return { score: evalFn(current_grid, current_score), path: path };
+                return { score: evalFn(current_grid, current_score) + total_lines_cleared * 30000, path: path };
             }
             let best_future = { score: -Infinity, path: path };
             let placed_any = false;
@@ -453,10 +600,11 @@ class AIEngine {
                             }
 
                             let step_score = stepFn(lines_cleared, touching_edges, max_outer_edges, item.block, r, c, current_grid);
+                            step_score += this.getDeadZoneStepPenalty(new_grid, item.block, r, c) * 0.5;
 
                             let next_remaining = remaining_blocks.filter((_, index) => index !== i);
                             let current_step = { row: r, col: c, block_idx: item.idx, block: item.block, resulting_grid: new_grid };
-                            let future = dfs(new_grid, next_remaining, current_score + step_score, [...path, current_step]);
+                            let future = dfs(new_grid, next_remaining, current_score + step_score, [...path, current_step], total_lines_cleared + lines_cleared);
 
                             if (future.score > best_future.score) best_future = future;
                         }
@@ -483,6 +631,7 @@ class AIEngine {
         const evalBoard = (g, s) => brainMode === 1 ? this.evaluate_brain1(g, s)
             : brainMode === 2 ? this.evaluate_brain2(g, s)
             : brainMode === 3 ? this.evaluate_brain3(g, s)
+            : brainMode === 5 ? this.evaluate_brain5(g, s)
             : this.evaluate_brain4(g, s);
         
         const simulate_all_placements = (grid, blocks, current_score = 0) => {
@@ -499,7 +648,8 @@ class AIEngine {
                             let {new_grid, lines_cleared} = state.place_block(block, r, c, grid);
                             let touching_edges = state.get_touching_edges(block, r, c, grid);
                             
-                            let step_score = (lines_cleared * 75000) + (touching_edges * 1500);
+                            let step_score = (lines_cleared * 90000) + (touching_edges * 600);
+                            step_score += this.getDeadZoneStepPenalty(new_grid, block, r, c);
                             
                             let max_outer_edges = 0;
                             for (let br = 0; br < block.length; br++) {
@@ -513,7 +663,7 @@ class AIEngine {
                                 }
                             }
                             if (touching_edges >= (max_outer_edges * 0.8)) {
-                                step_score += 25000;
+                                step_score += 10000;
                             }
                             
                             let remaining = blocks.filter((_, idx) => idx !== i);
@@ -976,7 +1126,7 @@ document.getElementById('calculate-btn').onclick = () => {
         let fillPct = Math.round(ai.getBoardFillPercent(state.grid));
         brainLabel = `Auto\u2192${subName} (${fillPct}%)`;
     } else {
-        brainLabel = currentBrainMode === 1 ? "Tepi" : currentBrainMode === 2 ? "Garis" : "Sebar";
+        brainLabel = currentBrainMode === 1 ? "Tepi" : currentBrainMode === 2 ? "Garis" : currentBrainMode === 3 ? "Sebar" : "Tengah";
     }
     let result = ai.find_best_move(state, spawnerQueues, currentBrainMode);
     let isKiamat = result && result.score < -500000;

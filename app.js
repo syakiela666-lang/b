@@ -221,9 +221,9 @@ class AIEngine {
         let slots = this.countBigBlockSlots(grid);
 
         // WAJIB bisa fit 3x3 — kalau gak bisa, penalty GEDE
-        if (!fit.can3x3) score -= 2000000;
-        if (!fit.can5x1) score -= 500000;
-        if (!fit.can1x5) score -= 500000;
+        if (!fit.can3x3) score -= 300000;
+        if (!fit.can5x1) score -= 100000;
+        if (!fit.can1x5) score -= 100000;
 
         // Reward BANYAK slot buat balok gede (bukan cuma bisa/tidak)
         score += slots.slots3x3 * 40000;  // tiap posisi 3x3 possible = bonus
@@ -248,7 +248,7 @@ class AIEngine {
     }
 
     stepScore_brain1(lines_cleared, touching_edges, max_outer_edges, block, row, col, grid) {
-        let s = (lines_cleared * 100000) + (touching_edges * 500);
+        let s = (lines_cleared * 1000000) + (touching_edges * 500);
         if (grid) {
             s += this.getDeadZoneStepPenalty(grid, block, row, col);
             // Reward: after placement, still banyak slot buat balok gede?
@@ -263,10 +263,11 @@ class AIEngine {
     // Strategy: Board penuh? AGRESIF clear line, no mercy
     evaluate_brain2(grid, initial_score = 0) {
         let score = initial_score;
-        let fit = this.canFitBlocks(grid);
-        if (!fit.can3x3) score -= 800000;
-        if (!fit.can5x1) score -= 200000;
-        if (!fit.can1x5) score -= 200000;
+        // In a desperate state, do not reserve space for giant blocks
+        // let fit = this.canFitBlocks(grid);
+        // if (!fit.can3x3) score -= 800000;
+        // if (!fit.can5x1) score -= 200000;
+        // if (!fit.can1x5) score -= 200000;
         score += this.getDeadZonesScore(grid);
 
         // AGRESIF: reward near-complete lines heavily
@@ -312,8 +313,8 @@ class AIEngine {
     }
 
     stepScore_brain2(lines_cleared, touching_edges, max_outer_edges, block, row, col, grid) {
-        // LINE CLEAR IS KING — 150k per line
-        let s = (lines_cleared * 150000) + (touching_edges * 300);
+        // LINE CLEAR IS KING — 1.5m per line
+        let s = (lines_cleared * 1500000) + (touching_edges * 300);
         if (grid) {
             s += this.getDeadZoneStepPenalty(grid, block, row, col);
             // Bonus: adding to rows/cols that are already partially filled
@@ -417,7 +418,7 @@ class AIEngine {
     }
 
     stepScore_brain3(lines_cleared, touching_edges, max_outer_edges, block, row, col, grid) {
-        let s = (lines_cleared * 100000) + (touching_edges * 400);
+        let s = (lines_cleared * 1000000) + (touching_edges * 400);
         if (grid) {
             s += this.getDeadZoneStepPenalty(grid, block, row, col);
             // Reward: adding to lines that are already building up
@@ -1067,11 +1068,10 @@ document.getElementById('calculate-btn').onclick = () => {
     let isKiamat = result && result.score < -500000;
     let allPlaced = result && result.path && result.path.length === validBlocks.length;
     
-    if (allPlaced) {
+    if (allPlaced && !isKiamat) {
         currentRecommendation = result.path;
         document.getElementById('ai-status').textContent = `[${brainLabel}] Berhasil! (Skor: ${result.score})`;
-        if (isKiamat) document.getElementById('ai-status').textContent += " ⚠️ AWAS KIAMAT!";
-        document.getElementById('ai-status').className = "status-badge" + (isKiamat ? " alert" : "");
+        document.getElementById('ai-status').className = "status-badge";
         document.getElementById('apply-btn').disabled = false;
         
         updateBoardVisuals(); 
@@ -1092,7 +1092,10 @@ document.getElementById('calculate-btn').onclick = () => {
                 let itemRec = ai.tryItems(state.grid, validBlocks, availabilities, currentBrainMode);
                 if (itemRec) {
                     itemRecommendation = itemRec;
-                    
+                    // Prioritize item over doomed path
+                    currentRecommendation = null;
+                    document.getElementById('apply-btn').disabled = true;
+
                     if (itemRecommendation.type === '1x1' && itemRecommendation.score > 900000) {
                         document.getElementById('ai-status').innerHTML = "🌟 BINTANG 5: Gunakan <b>Tambah 1x1</b>";
                     } else if (itemRecommendation.type === '1x1') {
@@ -1103,21 +1106,33 @@ document.getElementById('calculate-btn').onclick = () => {
                         document.getElementById('ai-status').innerHTML = "⚠️ BINTANG 2: Gunakan <b>Bomb '+'</b>";
                     }
                 } else {
-                    document.getElementById('ai-status').textContent = "😭 GAME OVER (Semua Mentok)";
-                    if (result && result.path && result.path.length > 0) {
+                    if (allPlaced) {
                         currentRecommendation = result.path;
-                        document.getElementById('ai-status').textContent += " - Lihat langkah terakhir di papan";
+                        document.getElementById('ai-status').textContent = `[${brainLabel}] Berhasil! (Skor: ${result.score}) ⚠️ AWAS KIAMAT!`;
                         document.getElementById('apply-btn').disabled = false;
+                    } else {
+                        document.getElementById('ai-status').textContent = "😭 GAME OVER (Semua Mentok)";
+                        if (result && result.path && result.path.length > 0) {
+                            currentRecommendation = result.path;
+                            document.getElementById('ai-status').textContent += " - Lihat langkah terakhir di papan";
+                            document.getElementById('apply-btn').disabled = false;
+                        }
                     }
                 }
                 updateBoardVisuals();
             }, 50);
         } else {
-            document.getElementById('ai-status').textContent = "🛑 GAME OVER! (Mentok)";
-            if (result && result.path && result.path.length > 0) {
+            if (allPlaced) {
                 currentRecommendation = result.path;
-                document.getElementById('ai-status').textContent += " - Lihat langkah terakhir";
+                document.getElementById('ai-status').textContent = `[${brainLabel}] Berhasil! (Skor: ${result.score}) ⚠️ AWAS KIAMAT!`;
                 document.getElementById('apply-btn').disabled = false;
+            } else {
+                document.getElementById('ai-status').textContent = "🛑 GAME OVER! (Mentok)";
+                if (result && result.path && result.path.length > 0) {
+                    currentRecommendation = result.path;
+                    document.getElementById('ai-status').textContent += " - Lihat langkah terakhir";
+                    document.getElementById('apply-btn').disabled = false;
+                }
             }
             document.getElementById('ai-status').className = "status-badge alert";
             updateBoardVisuals();
